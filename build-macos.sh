@@ -239,24 +239,42 @@ resolve_dep() {
 # holding "basename<tab>path" lines. "origin" is the directory that
 # @loader_path refers to for this object.
 collect_deps() {
-	local obj="$1" map="$2" origin="$3" dep base resolved
+	local obj="$1" map="$2" origin="$3" dep base resolved prev
 
 	while read -r dep; do
 		case "$dep" in
 			/usr/lib/*|/System/*) continue ;;	# provided by the OS
-			@executable_path/*) continue ;;		# already pointed into the bundle
 		esac
 
 		# Checked before resolving, which also disposes of the object's own id:
 		# otool lists that first for a dylib, and by the time we recurse into one
 		# its name is already recorded.
 		base=${dep##*/}
-		if awk -F'\t' -v b="$base" '$1 == b { found = 1 } END { exit !found }' "$map"; then
-			continue				# already collected
-		fi
+		# Already collected? Compare the resolved path too: two libraries with
+		# the same basename from different prefixes would both flatten to
+		# Contents/Frameworks/<basename>, and taking the first silently ships
+		# the wrong one, so that case is reported below rather than ignored.
+		prev=$(awk -F'\t' -v b="$base" '$1 == b { print $2; exit }' "$map")
 
 		case "$dep" in
 			/*) resolved="$dep" ;;
+			@executable_path/*)
+				# NOT "already in the bundle": no bundle exists yet. A binary
+				# reaching here with this form was rewritten by an earlier
+				# staging pass, and skipping it drops the dependency silently -
+				# the copy never happens and rewrite_deps() then finds nothing
+				# to do. Resolve it against where the executable actually is
+				# now, and fall back to the library search paths if the staged
+				# copy is not there yet.
+				resolved="$origin/${dep#@executable_path/}"
+				if [ ! -f "$resolved" ]; then
+					resolved=$(resolve_dep "$obj" "@rpath/${dep##*/}" "$origin" 2>/dev/null) || resolved=""
+				fi
+				if [ -z "$resolved" ] || [ ! -f "$resolved" ]; then
+					echo "   ! ${obj##*/} references $dep and it could not be resolved; not bundled"
+					continue
+				fi
+				;;
 			@rpath/*|@loader_path/*)
 				if ! resolved=$(resolve_dep "$obj" "$dep" "$origin"); then
 					echo "   ! ${obj##*/} references $dep and it could not be resolved; not bundled"
@@ -273,6 +291,16 @@ collect_deps() {
 			continue
 		fi
 
+		if [ -n "$prev" ]; then
+			if [ "$prev" != "$resolved" ]; then
+				echo "   ! two different libraries are both named $base:"
+				echo "       $prev"
+				echo "       $resolved"
+				echo "     they cannot both be Contents/Frameworks/$base"
+				echo BAD >> "${map}.collision"
+			fi
+			continue			# already collected
+		fi
 		printf '%s\t%s\n' "$base" "$resolved" >> "$map"
 		collect_deps "$resolved" "$map" "$(dirname "$resolved")"
 	done < <("$OTOOL" -L "$obj" | tail -n +2 | awk '{ print $1 }')
@@ -383,6 +411,13 @@ stage_slice() {
 		[ -f "$obj" ] || continue
 		rewrite_deps "$obj" "$stage/libs"
 	done
+
+	if [ -f "${map}.collision" ]; then
+		rm -f "${map}.collision"
+		echo "error: [$arch] two different libraries share a basename (see above);"
+		echo "       Contents/Frameworks is flat, so one would silently win."
+		exit 1
+	fi
 
 	echo "==> [$arch] bundling $(wc -l < "$map" | tr -d ' ') dependencies"
 }
