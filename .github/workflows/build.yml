@@ -436,10 +436,22 @@ jobs:
           codesign -dvvv releases/macos/RPCEmu.app 2>&1 | head -20
 
           echo
-          echo "=== B. UUID of the binary we inspect ==="
-          dwarfdump --uuid "$exe" 2>&1 || true
-          echo "--- staged arm64 slice ---"
+          echo "=== B. UUIDs at every stage of the pipeline ==="
+          # Filenames and timestamps do not identify a Mach-O image; UUIDs do,
+          # and they survive copies. If the binary that was built, the one that
+          # was signed and the one in Contents/MacOS are not the same image,
+          # that alone explains every observation.
+          echo "--- as built (arm64 slice, pre-lipo) ---"
           dwarfdump --uuid "$slice" 2>&1 || true
+          echo "--- as built (x86_64 slice, pre-lipo) ---"
+          dwarfdump --uuid build-mac-x86_64/appstage/bin/rpcemu 2>&1 || true
+          echo "--- fused and bundled (what we inspect, and what we run) ---"
+          dwarfdump --uuid "$exe" 2>&1 || true
+          echo "--- any other Mach-O in the bundle? ---"
+          find releases/macos/RPCEmu.app -type f -perm +111 2>/dev/null \
+            | while read -r f; do
+                file "$f" | grep -q Mach-O && echo "  $f" && dwarfdump --uuid "$f" 2>&1 | sed 's/^/    /'
+              done
 
           echo
           echo "=== C. does the constructor survive into __mod_init_func? ==="
@@ -459,13 +471,60 @@ jobs:
             || echo "  no probe symbols (internal linkage may hide them; see C)"
 
           echo
+          echo "=== C2. newer initializer formats (__init_offsets) ==="
+          # Apple has moved these: older builds use __DATA,__mod_init_func,
+          # newer linkers __DATA_CONST,__mod_init_func, and newest ld64 with
+          # chained fixups uses __TEXT,__init_offsets. Absence of one proves
+          # nothing on its own, so look for all three.
+          for a in $(lipo -archs "$exe"); do
+            echo "--- slice $a: initializer sections present ---"
+            otool -arch "$a" -l "$exe" \
+              | grep -E 'sectname (__mod_init_func|__init_offsets)' \
+              || echo "  NONE of __mod_init_func / __init_offsets found"
+          done
+          echo "--- __TEXT,__init_offsets (arm64), if present ---"
+          otool -arch arm64 -s __TEXT __init_offsets "$exe" 2>/dev/null | head -10 \
+            || echo "  (no __init_offsets)"
+
+          echo
+          echo "=== C3. does _main disassemble as our code? ==="
+          # If the bytes at LC_MAIN are not our prologue, the entry point is not
+          # what the symbol table claims.
+          otool -arch arm64 -tvV "$exe" 2>/dev/null \
+            | sed -n '/^_main:/,/^_[A-Za-z]/p' | head -25 \
+            || echo "  (could not disassemble _main)"
+
+          echo
+          echo "=== C4. ask dyld directly whether it runs our initializers ==="
+          # DYLD_PRINT_INITIALIZERS is ignored under the hardened runtime, so
+          # run the UNSIGNED staged slice as well as the bundled binary.
+          for target in "$slice" "$exe"; do
+            echo "--- DYLD_PRINT_INITIALIZERS on $target ---"
+            rm -f /tmp/rpcemu-probe.log
+            DYLD_PRINT_INITIALIZERS=1 "$target" --help > dyld-$$.txt 2>&1 &
+            pid=$!
+            for i in $(seq 1 10); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+            kill -9 "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            grep -iE 'running initializer|rpcemu' dyld-$$.txt | head -8 \
+              || echo "  (no initializer lines; dyld may have refused the variable)"
+            [ -s /tmp/rpcemu-probe.log ] && echo "  PROBE FIRED:" && sed 's/^/    /' /tmp/rpcemu-probe.log
+            rm -f dyld-$$.txt
+          done
+
+          echo
           echo "=== E. lldb: which image is loaded, and is OUR main reached? ==="
           # Scoped to the executable, not every image with a symbol named main.
+          # Breaking on the NAME resolved across 38 images last time and proved
+          # nothing. Break on the executable's own main, print the loaded
+          # image's UUID for comparison with dwarfdump above, and stop at the
+          # LC_MAIN address itself.
           lldb -b \
             -o 'breakpoint set --shlib rpcemu --name main' \
             -o 'breakpoint list' \
+            -o 'image list -u rpcemu' \
+            -o 'image dump sections rpcemu' \
             -o 'run --help' \
-            -o 'image list rpcemu' \
             -o 'thread backtrace' \
             -o 'quit' \
             "$exe" > lldb.out 2>&1 &
