@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Build RPCEmu (Spork Edition) for macOS as a UNIVERSAL binary and stage a
-# runnable release into releases/macos/universal/ - parity with build.sh's
+# runnable release into releases/macos/ as RPCEmu.app - parity with build.sh's
 # releases/linux/<arch>/ and build-windows.sh's releases/windows/amd64/ layout.
 #
 # Why two slices instead of one -arch arm64 -arch x86_64 build:
@@ -36,15 +36,31 @@ DO_BUILD=true
 DO_FUSE=true
 ONE_ARCH=""
 
-for arg in "$@"; do
-	case "$arg" in
+# A "for arg in $@" loop cannot consume an option's value, which is why --arch
+# used to be a no-op that relied on the architecture being parsed as a bare
+# argument. That accepted "build-macos.sh arm64", and silently ignored a bare
+# "--arch" with nothing after it.
+while [ $# -gt 0 ]; do
+	case "$1" in
 		--zip|-z) MAKE_ZIP=true ;;
-		--arch) : ;;                       # value handled below
-		x86_64|arm64) ONE_ARCH="$arg"; DO_FUSE=false ;;
+		--arch)
+			case "${2:-}" in
+				x86_64|arm64) ONE_ARCH="$2"; DO_FUSE=false; shift ;;
+				"") echo "error: --arch needs an architecture (x86_64 or arm64)"; exit 2 ;;
+				*)  echo "error: unknown architecture '$2' (want x86_64 or arm64)"; exit 2 ;;
+			esac
+			;;
+		--arch=*)
+			case "${1#--arch=}" in
+				x86_64|arm64) ONE_ARCH="${1#--arch=}"; DO_FUSE=false ;;
+				*) echo "error: unknown architecture '${1#--arch=}' (want x86_64 or arm64)"; exit 2 ;;
+			esac
+			;;
 		--fuse) DO_BUILD=false; DO_FUSE=true ;;
 		--help|-h) echo "Usage: $0 [--arch x86_64|arm64] [--fuse] [--zip]"; exit 0 ;;
-		*) echo "unknown option: $arg"; exit 2 ;;
+		*) echo "unknown option: $1"; exit 2 ;;
 	esac
+	shift
 done
 
 get_version() { [ -f VERSION ] && tr -d ' \t\r\n' < VERSION || echo "0.0.0"; }
@@ -71,7 +87,7 @@ write_info_plist() {
 	<key>CFBundleVersion</key><string>${VERSION}</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-	<key>LSMinimumSystemVersion</key><string>10.15</string>
+	<key>LSMinimumSystemVersion</key><string>${PLIST_MIN_OS}</string>
 	<key>NSHighResolutionCapable</key><true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key><true/>
 	<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
@@ -467,6 +483,18 @@ if [ "$DO_FUSE" = true ]; then
 	# Writable data (machines, configs, ROMs, hostfs, logs) is NOT kept inside
 	# the bundle - InitRpcemuPaths() reads Contents/Resources and seeds ~/RPCEmu
 	# on first run, so an app dragged into /Applications stays read-only.
+	# The bundle can only claim what its slices support: x86_64 targets 10.15
+	# and arm64 targets 11.0 (there is no earlier macOS on Apple Silicon), so a
+	# fused bundle runs from 10.15 on Intel and 11.0 on Apple Silicon. The plist
+	# carries one number, so it must be the lower - anything higher would stop
+	# Intel Macs the x86_64 slice supports from launching. A single-arch arm64
+	# build advertises 11.0.
+	if [ -n "$ONE_ARCH" ]; then
+		PLIST_MIN_OS=$(slice_deploy "$ONE_ARCH")
+	else
+		PLIST_MIN_OS=$(slice_deploy x86_64)
+	fi
+
 	APP="releases/macos/RPCEmu.app"
 	CONTENTS="$APP/Contents"
 	MACOSD="$CONTENTS/MacOS"
