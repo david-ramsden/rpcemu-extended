@@ -226,6 +226,24 @@ INSTALL_NAME_TOOL=$(command -v install_name_tool || \
 # These have to be followed rather than skipped. Homebrew's webp libraries refer
 # to each other this way, and leaving them out produced an app that still would
 # not start, with dyld looking for Contents/Frameworks/../lib.
+# Canonical path: resolve the directory AND follow a symlinked filename.
+# "cd $(dirname) && pwd -P" alone resolves the directory only, so Homebrew's
+# lib/libSDL3.dylib -> libSDL3.0.dylib still came back under the link's name and
+# looked like a different library from the same file reached directly.
+canon_path() {
+	local p="$1" d f
+	while [ -L "$p" ]; do
+		d=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P) || break
+		f=$(readlink "$p")
+		case "$f" in
+			/*) p="$f" ;;
+			*)  p="$d/$f" ;;
+		esac
+	done
+	d=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P) || { echo "$p"; return; }
+	echo "$d/${p##*/}"
+}
+
 resolve_dep() {
 	local obj="$1" dep="$2" origin="$3" entry candidate
 
@@ -321,7 +339,7 @@ collect_deps() {
 		# real path, and recursing accumulates "../lib/../lib/" segments, so
 		# the same library arrives under several spellings. Without this the
 		# collision check below reports those as different libraries.
-		resolved=$(cd "$(dirname "$resolved")" 2>/dev/null && pwd -P)/${resolved##*/}
+		resolved=$(canon_path "$resolved")
 
 		if [ -n "$prev" ]; then
 			if [ "$prev" != "$resolved" ]; then
@@ -433,16 +451,17 @@ stage_slice() {
 				continue
 			fi
 			if [ -f "$sdl3" ]; then
-				# Record it the same way collect_deps() would, so a name
-				# already in the map is compared rather than duplicated. The
-				# recursion below can reach SDL3 again under its versioned
-				# install name (libSDL3.0.dylib), which is the same file: that
-				# is a second copy of ~5MB in the bundle, not an error.
-				# Record it under its own install name, which is what every
-				# other entry in the map uses and what dependent libraries
-				# reference. Filing it as "libSDL3.dylib" while collect_deps()
-				# below reaches the same file as "libSDL3.0.dylib" put both in
-				# the bundle - the same 5MB library twice, under two names.
+				# Record it exactly as collect_deps() would, because the
+				# recursion below reaches the same file again and the two
+				# entries are compared:
+				#   - under its own install name (libSDL3.0.dylib), not the
+				#     symlink's name, so it is not bundled twice under two
+				#     names; and
+				#   - by canonical path, since $sdl3 is typically
+				#     /opt/homebrew/opt/sdl3/lib/libSDL3.dylib, a symlink into
+				#     Cellar. Storing the symlink made collect_deps' canonical
+				#     path look like a different library and failed the build.
+				sdl3=$(canon_path "$sdl3")
 				sdl3_name=$("$OTOOL" -D "$sdl3" 2>/dev/null | tail -n +2 | head -1)
 				sdl3_name=${sdl3_name##*/}
 				[ -n "$sdl3_name" ] || sdl3_name=${sdl3##*/}
