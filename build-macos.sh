@@ -329,6 +329,44 @@ stage_slice() {
 		collect_deps "$obj" "$map" "$build_dir/bin"
 	done
 
+	# Libraries loaded at runtime rather than linked, which otool -L cannot see.
+	#
+	# Homebrew's "sdl2" is now sdl2-compat: a shim implementing the SDL2 ABI on
+	# top of SDL3, which it dlopen()s instead of linking. So libSDL3 appears in
+	# no LC_LOAD_DYLIB and the dependency walk above never finds it - the app
+	# then works on the build machine (Homebrew's copy is still on disk) and
+	# fails anywhere else. sdl2-compat's failure path runs in a library
+	# constructor and puts up a modal alert, so dyld blocks in
+	# runAllInitializersForMain() and the program never reaches main() at all:
+	# no output, no headless mode, and a GUI that cannot start either.
+	#
+	# sdl2-compat looks for "@loader_path/libSDL3.dylib" first, and the loader
+	# here is Contents/Frameworks/libSDL2-2.0.0.dylib, so placing SDL3 beside it
+	# is enough - no install-name rewriting of the reference is possible anyway,
+	# since there is no reference to rewrite.
+	if [ -f "$stage/libs/libSDL2-2.0.0.dylib" ]; then
+		local sdl3
+		for sdl3 in \
+			"$(brew --prefix sdl3 2>/dev/null)/lib/libSDL3.dylib" \
+			"$(brew --prefix 2>/dev/null)/lib/libSDL3.dylib" \
+			/opt/homebrew/lib/libSDL3.dylib \
+			/usr/local/lib/libSDL3.dylib
+		do
+			if [ -f "$sdl3" ]; then
+				printf '%s\t%s\n' "libSDL3.dylib" "$sdl3" >> "$map"
+				collect_deps "$sdl3" "$map" "$(dirname "$sdl3")"
+				break
+			fi
+		done
+		if ! awk -F'\t' '$1 == "libSDL3.dylib" { f = 1 } END { exit !f }' "$map"; then
+			echo "error: [$arch] this SDL2 is sdl2-compat, which needs SDL3 at runtime,"
+			echo "       but no libSDL3.dylib was found to bundle. Install it (brew"
+			echo "       install sdl3) or link a real SDL2 instead. Without it the"
+			echo "       finished app cannot start on any machine but this one."
+			exit 1
+		fi
+	fi
+
 	while IFS=$'\t' read -r base src; do
 		[ -n "$base" ] || continue
 		cp -f "$src" "$stage/libs/$base"
@@ -509,6 +547,46 @@ EOF
 		fi
 		codesign --verify --deep --strict "$APP" 2>/dev/null && echo "✓ signature verified"
 	fi
+
+	# Prove the bundle is self-contained, rather than assuming it. Every
+	# @executable_path reference must resolve to a file that is actually here,
+	# and nothing may still point at Homebrew - that is the reference that works
+	# on the build machine and nowhere else.
+	echo "==> Verifying the bundle is self-contained"
+	bundle_ok=true
+	for obj in "$MACOSD"/* "$CONTENTS/Frameworks"/*; do
+		[ -f "$obj" ] || continue
+		file "$obj" 2>/dev/null | grep -q Mach-O || continue
+
+		"$OTOOL" -L "$obj" 2>/dev/null | tail -n +2 | awk '{ print $1 }' | while read -r dep; do
+			case "$dep" in
+				@executable_path/../Frameworks/*)
+					if [ ! -f "$CONTENTS/Frameworks/${dep##*/}" ]; then
+						echo "   ! $(basename "$obj") needs ${dep##*/}, which is not in Contents/Frameworks"
+						echo BAD >> "$CONTENTS/.deps.fail"
+					fi
+					;;
+				/opt/homebrew/*|/usr/local/*)
+					echo "   ! $(basename "$obj") still references $dep - it will not resolve elsewhere"
+					echo BAD >> "$CONTENTS/.deps.fail"
+					;;
+			esac
+		done
+	done
+	if [ -f "$CONTENTS/.deps.fail" ]; then
+		rm -f "$CONTENTS/.deps.fail"
+		echo "error: the bundle is not self-contained (see above)."
+		exit 1
+	fi
+	# sdl2-compat dlopen()s SDL3, so no load command records it: check by name.
+	if [ -f "$CONTENTS/Frameworks/libSDL2-2.0.0.dylib" ] && \
+	   [ ! -f "$CONTENTS/Frameworks/libSDL3.dylib" ]; then
+		echo "error: libSDL2 is present but libSDL3 is not. If this SDL2 is"
+		echo "       sdl2-compat it loads SDL3 at runtime, and the app will stop"
+		echo "       in a modal alert before main() on any machine without it."
+		exit 1
+	fi
+	echo "✓ every bundled dependency resolves inside the bundle"
 
 	echo "==> Universal binary architectures:"
 	"$LIPO" -archs "$MACOSD/rpcemu" 2>/dev/null || true
