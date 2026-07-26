@@ -230,8 +230,12 @@ resolve_dep() {
 	local obj="$1" dep="$2" origin="$3" entry candidate
 
 	case "$dep" in
-	@loader_path/*)
-		candidate="$origin/${dep#@loader_path/}"
+	@loader_path/*|@executable_path/*)
+		# Both are relative to where the referring object sits, which during
+		# staging is $origin. collect_deps() handles @executable_path itself,
+		# but a chain reaching here through @rpath can arrive with either form,
+		# so the resolver understands both.
+		candidate="$origin/${dep#@*_path/}"
 		if [ -f "$candidate" ]; then
 			echo "$candidate"
 			return 0
@@ -593,6 +597,15 @@ if [ "$DO_FUSE" = true ]; then
 		else
 			echo "   ! $base is single-architecture (present in only one slice)"
 			cp -f "$lib" "$FRAMEWORKSD/$base"
+		fi
+		# The thin copies were given this id before fusing, so lipo should
+		# carry it through - but the finished bundle is what matters, and a
+		# wrong id here makes every dependent library unloadable. Cheap to
+		# assert rather than assume.
+		if [ -n "$INSTALL_NAME_TOOL" ]; then
+			chmod u+w "$FRAMEWORKSD/$base"
+			"$INSTALL_NAME_TOOL" -id "@executable_path/../Frameworks/$base" \
+				"$FRAMEWORKSD/$base" 2>/dev/null || true
 		fi
 		bundled=$((bundled + 1))
 	done
