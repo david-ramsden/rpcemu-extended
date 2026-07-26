@@ -333,6 +333,12 @@ bool RpcemuApp::OnInit()
 
 int main(int argc, char **argv)
 {
+	/* TEMPORARY PROBE - not for merge. Paired with the symbol inspection in CI:
+	   this distinguishes "main() exists but never runs" from "the binary does
+	   not contain this main() at all". */
+	fprintf(stderr, "RPCEMU-PROBE: main() entered, argc=%d\n", argc);
+	fflush(stderr);
+
 	bool headless = false;
 	bool list_machines = false;
 	bool show_help = false;

@@ -414,6 +414,56 @@ jobs:
       # is meant to catch. It runs so the output is on the record - once the
       # bundle honours --help, drop the "|| true" and macOS is held to the same
       # standard as the others.
+      # TEMPORARY - not for merge. Establishes which main() the linked binary
+      # actually contains, and whether it is reached. Observing that the first
+      # statement of main() prints nothing is not by itself proof that main()
+      # was bypassed: the binary might not contain the instrumented main(), or
+      # the entry point might come from a different translation unit. These
+      # checks separate those cases.
+      - name: PROBE - entry symbols in the linked binary
+        timeout-minutes: 5
+        run: |
+          exe=releases/macos/RPCEmu.app/Contents/MacOS/rpcemu
+          slice=build-mac-arm64/appstage/bin/rpcemu
+
+          echo "=== 1. is there a _main symbol, and is it ours? ==="
+          nm -m "$exe" 2>&1 | grep -E ' _main$| _main ' || echo "(no _main in nm -m output)"
+
+          echo
+          echo "=== 2. all external text symbols named *main* ==="
+          nm "$exe" 2>&1 | grep -E ' T ' | grep -i main || echo "(none)"
+
+          echo
+          echo "=== 3. the Mach-O entry point (LC_MAIN gives an offset) ==="
+          otool -l "$exe" 2>&1 | grep -A 4 'cmd LC_MAIN' || echo "(no LC_MAIN)"
+
+          echo
+          echo "=== 4. which address does _main have? (compare with entryoff) ==="
+          nm -n "$exe" 2>&1 | grep -E ' _main$' || echo "(no _main)"
+
+          echo
+          echo "=== 5. does the arm64 slice agree? ==="
+          nm "$slice" 2>&1 | grep -E ' T ' | grep -i main || echo "(slice unreadable or no main)"
+
+          echo
+          echo "=== 6. does the probe string exist in the binary at all? ==="
+          if strings -a "$exe" | grep -q 'RPCEMU-PROBE'; then
+            echo "yes - the instrumented main() IS compiled into this binary"
+          else
+            echo "NO - this binary does not contain the instrumented main()"
+          fi
+
+          echo
+          echo "=== 7. lldb: does a breakpoint on main resolve, and is it hit? ==="
+          printf 'breakpoint set -n main\nrun --help\nbt\nquit\n' > lldb.cmds
+          # Bounded: if it never stops, the run would otherwise sit here.
+          ( lldb -b -s lldb.cmds "$exe" > lldb.out 2>&1 ) &
+          pid=$!
+          for i in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          kill -9 "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat lldb.out || echo "(no lldb output; lldb may not be installed)"
+
       - name: Command-line smoke test (informational)
         timeout-minutes: 3
         run: |
