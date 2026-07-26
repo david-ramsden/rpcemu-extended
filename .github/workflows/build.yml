@@ -31,11 +31,11 @@ jobs:
         run: |
           file releases/linux/amd64/rpcemu-recompiler | grep -i ELF
           ls -la releases/linux/amd64/
-          # Actually execute it. --help and --list-machines run before any
-          # wxWidgets/GTK initialisation, so they work with no display and catch
-          # a binary that cannot start at all (bad link, missing library).
-          ./releases/linux/amd64/rpcemu-recompiler --help
-          ./releases/linux/amd64/rpcemu-recompiler --list-machines
+          # Actually execute it. These paths run before any wxWidgets/GTK
+          # initialisation, so they work with no display and catch a binary that
+          # cannot start at all (bad link, missing library). The same script
+          # runs on every platform, so the CLI is checked identically.
+          bash tests/cli_smoke.sh releases/linux/amd64/rpcemu-recompiler
 
       # Boot the machine for real and look at the screen. Everything above stops
       # at "the binary starts and parses its arguments"; this drives a full boot
@@ -93,8 +93,165 @@ jobs:
         run: |
           file releases/linux/arm64/rpcemu-interpreter | grep -i ELF
           ls -la releases/linux/arm64/
-          ./releases/linux/arm64/rpcemu-interpreter --help
-          ./releases/linux/arm64/rpcemu-interpreter --list-machines
+          bash tests/cli_smoke.sh releases/linux/arm64/rpcemu-interpreter
+
+      # Boot the machine for real and look at the screen. Everything above stops
+      # at "the binary starts and parses its arguments"; this drives a full boot
+      # over the built-in VNC server, so a break in the CPU, memory, VIDC, ROM
+      # loading or the VNC server itself shows up here rather than in a user's
+      # first run. The test machine is seeded with a !Boot that runs Desktop, so
+      # a healthy run reaches the RISC OS desktop; the check asks whether the
+      # screen has a desktop's range of colour, not whether it matches a
+      # reference image, so cosmetic changes cannot fail the build.
+      - name: Headless boot and VNC screenshot
+        timeout-minutes: 10
+        run: |
+          python3 tests/vnc_smoke.py \
+            --binary releases/linux/arm64/rpcemu-interpreter \
+            --save vnc-smoke.png
+
+      - name: Upload the boot screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnc-smoke-linux-arm64
+          path: vnc-smoke.png
+          if-no-files-found: ignore
+
+      - name: Upload Linux arm64 release
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpcemu-linux-arm64
+          path: |
+            releases/linux/arm64/
+            releases/linux/*.tar.gz
+            releases/linux/arm64/*.deb
+          if-no-files-found: error
+
+  windows-amd64:
+    # Native Windows build with MinGW-w64 via MSYS2 (MINGW64). Ships the
+    # recompiler (full-speed dynarec; the JIT supports the Windows x64 ABI).
+    # Uses build-windows.sh (build.sh is apt/.deb-only).
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSYS2 / MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-wxwidgets3.2-msw
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-libvncserver
+
+      - name: Build and stage release (native MSYS2)
+        run: |
+          chmod +x build-windows.sh
+          ./build-windows.sh --zip
+
+      - name: Smoke test binary (PE executable)
+        run: |
+          ls -la releases/windows/amd64/
+          # Windows ships the recompiler (full-speed dynarec; the JIT now
+          # supports the Windows x64 ABI).
+          file releases/windows/amd64/rpcemu-recompiler.exe | grep -i 'PE32'
+          # The same checks the other platforms run. This also exercises the
+          # staged release as a user gets it, so it catches a DLL that
+          # build-windows.sh failed to copy alongside the executable.
+          bash tests/cli_smoke.sh releases/windows/amd64/rpcemu-recompiler.exe
+
+      # Windows only: wxWidgets used to accept DOS-style "/switch" here and
+      # answer an unrecognised one with its own error and usage dialogs, which
+      # listed wx's options rather than RPCEmu's and would hang a runner with no
+      # interactive desktop. Long options are the interface on every platform,
+      # so "/H" must be reported like any other unknown option.
+      - name: DOS-style switches are rejected
+        timeout-minutes: 2
+        run: |
+          export RPCEMU_NO_GUI_MESSAGES=1
+          # MSYS2 rewrites an argument that looks like a Unix path into a Windows
+          # one, so a bare "/H" would arrive as "C:/msys64/H". Exclude it from
+          # that conversion so the test sends what it means to send.
+          export MSYS2_ARG_CONV_EXCL='*'
+          exe=./releases/windows/amd64/rpcemu-recompiler.exe
+
+          "$exe" /H > slash.txt 2>&1 && rc=0 || rc=$?
+          cat slash.txt
+          test "$rc" = "2" || { echo "expected exit 2 for /H, got $rc"; exit 1; }
+          grep -qi "unknown option" slash.txt || { echo "/H was not reported as an unknown option"; exit 1; }
+          # wx's own usage names options RPCEmu does not document.
+          if grep -qi "verbose" slash.txt; then
+            echo "wx's usage leaked into the message"
+            exit 1
+          fi
+          rm -f slash.txt
+
+      # Boot the machine for real and look at the screen. Everything above stops
+      # at "the binary starts and parses its arguments"; this drives a full boot
+      # over the built-in VNC server, so a break in the CPU, memory, VIDC, ROM
+      # loading or the VNC server itself shows up here rather than in a user's
+      # first run. The test machine is seeded with a !Boot that runs Desktop, so
+      # a healthy run reaches the RISC OS desktop; the check asks whether the
+      # screen has a desktop's range of colour, not whether it matches a
+      # reference image, so cosmetic changes cannot fail the build.
+      - name: Headless boot and VNC screenshot
+        timeout-minutes: 10
+        run: |
+          python3 tests/vnc_smoke.py \
+            --binary releases/linux/amd64/rpcemu-recompiler \
+            --save vnc-smoke.png
+
+      - name: Upload the boot screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnc-smoke-linux-amd64
+          path: vnc-smoke.png
+          if-no-files-found: ignore
+
+      - name: Upload Linux amd64 release
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpcemu-linux-amd64
+          path: |
+            releases/linux/amd64/
+            releases/linux/*.tar.gz
+            releases/linux/amd64/*.deb
+          if-no-files-found: error
+
+  linux-arm64:
+    # Native arm64 hosted runner (free for public repos). The ARM dynarec backend
+    # does not exist, so arm64 uses the interpreter (--interpreter).
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: bash setup-build-env.sh
+
+      - name: Build and package (arm64, interpreter)
+        run: |
+          chmod +x build.sh setup-build-env.sh
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            ./build.sh --interpreter --deb --zip
+          else
+            ./build.sh --interpreter --zip
+          fi
+
+      - name: Smoke test binary
+        run: |
+          file releases/linux/arm64/rpcemu-interpreter | grep -i ELF
+          ls -la releases/linux/arm64/
+          bash tests/cli_smoke.sh releases/linux/arm64/rpcemu-interpreter
 
       # Boot the machine for real and look at the screen. Everything above stops
       # at "the binary starts and parses its arguments"; this drives a full boot
@@ -427,6 +584,18 @@ jobs:
           chmod +x build-mac-arm64/appstage/bin/rpcemu || true
           try_help build-mac-arm64/appstage/bin/rpcemu
           try_help "$MACOSD/rpcemu"
+
+      # The same command-line checks the Linux and Windows jobs run. Not gating
+      # yet: --help is known not to return inside the bundle (see the note
+      # above), so this would fail for that reason rather than for anything it
+      # is meant to catch. It runs so the output is on the record - once the
+      # bundle honours --help, drop the "|| true" and macOS is held to the same
+      # standard as the others.
+      - name: Command-line smoke test (informational)
+        timeout-minutes: 5
+        run: |
+          bash tests/cli_smoke.sh releases/macos/RPCEmu.app/Contents/MacOS/rpcemu || \
+            echo "note: the command-line checks did not pass on macOS; see above."
 
       # Boot the machine for real and look at the screen - see the Linux job for
       # why. Run the binary inside the bundle, which is what a user launches,
