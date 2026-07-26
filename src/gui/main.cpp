@@ -185,9 +185,11 @@ static bool FileIsReadable(const char *path)
  * with write(2) directly, and also append to a file opened by name, so neither
  * depends on stdio being connected to anything.
  */
-namespace {
-
-void ProbeMark(const char *what)
+/* Deliberately NOT in an anonymous namespace, and marked used: internal
+   linkage plus dead-stripping (or LTO) could otherwise drop the constructor
+   entirely, which would look identical to "the constructor never ran". */
+__attribute__((used))
+void RpcemuProbeMark(const char *what)
 {
 	char line[256];
 	const int n = snprintf(line, sizeof(line), "RPCEMU-PROBE: %s\n", what);
@@ -210,12 +212,10 @@ void ProbeMark(const char *what)
 }
 
 struct RpcemuStartupProbe {
-	RpcemuStartupProbe()  { ProbeMark("static initialiser ran (before main)"); }
-	~RpcemuStartupProbe() { ProbeMark("static destructor ran (process exiting)"); }
+	RpcemuStartupProbe()  { RpcemuProbeMark("static initialiser ran (before main)"); }
+	~RpcemuStartupProbe() { RpcemuProbeMark("static destructor ran (process exiting)"); }
 };
-RpcemuStartupProbe g_rpcemu_startup_probe;
-
-} // namespace
+__attribute__((used)) RpcemuStartupProbe g_rpcemu_startup_probe;
 
 /*
  * No wxIMPLEMENT_APP here: we provide our own main() so that headless mode can
@@ -383,7 +383,7 @@ int main(int argc, char **argv)
 	{
 		char m[128];
 		snprintf(m, sizeof(m), "main() entered, argc=%d", argc);
-		ProbeMark(m);
+		RpcemuProbeMark(m);
 	}
 
 	bool headless = false;
