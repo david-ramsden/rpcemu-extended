@@ -30,6 +30,9 @@
 
 #ifdef __WXMSW__
 #include <windows.h>
+#else
+#include <fcntl.h>    /* TEMPORARY PROBE */
+#include <unistd.h>   /* TEMPORARY PROBE */
 #endif
 
 #include "data_paths.h"
@@ -173,22 +176,45 @@ static bool FileIsReadable(const char *path)
 	return true;
 }
 
-/* TEMPORARY PROBE - not for merge. Runs as a static initialiser, before main().
-   If this prints and main() does not, something during startup never returns. */
+/* TEMPORARY PROBE - not for merge.
+ *
+ * Records progress through startup WITHOUT using C stdio. The previous probe
+ * printed with fprintf(stderr) and nothing appeared, while Cocoa's own NSLog
+ * messages did - but NSLog goes to the unified logging system, not to stderr
+ * via stdio, so that told us nothing about whether our code ran. These write
+ * with write(2) directly, and also append to a file opened by name, so neither
+ * depends on stdio being connected to anything.
+ */
 namespace {
+
+void ProbeMark(const char *what)
+{
+	char line[256];
+	const int n = snprintf(line, sizeof(line), "RPCEMU-PROBE: %s\n", what);
+
+	if (n > 0) {
+		ssize_t ignored = write(2, line, (size_t) n);  /* raw fd 2, no stdio */
+		(void) ignored;
+	}
+
+	/* And to a file, in case fd 2 is closed or redirected by the launcher. */
+	const int fd = open("/tmp/rpcemu-probe.log",
+	                    O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (fd >= 0) {
+		if (n > 0) {
+			ssize_t ignored = write(fd, line, (size_t) n);
+			(void) ignored;
+		}
+		close(fd);
+	}
+}
+
 struct RpcemuStartupProbe {
-	RpcemuStartupProbe()
-	{
-		fprintf(stderr, "RPCEMU-PROBE: static initialiser ran (before main)\n");
-		fflush(stderr);
-	}
-	~RpcemuStartupProbe()
-	{
-		fprintf(stderr, "RPCEMU-PROBE: static destructor ran (process exiting)\n");
-		fflush(stderr);
-	}
+	RpcemuStartupProbe()  { ProbeMark("static initialiser ran (before main)"); }
+	~RpcemuStartupProbe() { ProbeMark("static destructor ran (process exiting)"); }
 };
 RpcemuStartupProbe g_rpcemu_startup_probe;
+
 } // namespace
 
 /*
@@ -354,8 +380,11 @@ int main(int argc, char **argv)
 	/* TEMPORARY PROBE - not for merge. Paired with the symbol inspection in CI:
 	   this distinguishes "main() exists but never runs" from "the binary does
 	   not contain this main() at all". */
-	fprintf(stderr, "RPCEMU-PROBE: main() entered, argc=%d\n", argc);
-	fflush(stderr);
+	{
+		char m[128];
+		snprintf(m, sizeof(m), "main() entered, argc=%d", argc);
+		ProbeMark(m);
+	}
 
 	bool headless = false;
 	bool list_machines = false;

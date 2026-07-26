@@ -454,16 +454,36 @@ jobs:
           fi
 
           echo
-          echo "=== 7. plain run: which probes print, and in what order? ==="
-          # The static initialiser runs before main(). If it prints and main()
-          # does not, something between them never returns.
+          echo "=== 7. plain run: does our code run at all? ==="
+          # The probes now use write(2) and a file, not stdio. The previous
+          # attempt printed with fprintf(stderr) and nothing appeared, while
+          # Cocoa's NSLog messages did - but NSLog goes to the unified logging
+          # system rather than through stdio, so it never showed that our
+          # stderr was reaching anything. The file is the channel that cannot
+          # be swallowed by a closed or redirected fd.
+          rm -f /tmp/rpcemu-probe.log
           "$exe" --help > plain.txt 2>&1 &
           pid=$!
           for i in $(seq 1 12); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
           kill -9 "$pid" 2>/dev/null || true
           wait "$pid" 2>/dev/null || true
-          echo "--- output ---"
-          grep -E 'RPCEMU-PROBE|Usage:' plain.txt || echo "(no probe output at all)"
+
+          echo "--- captured stdout/stderr ---"
+          grep -E 'RPCEMU-PROBE|Usage:' plain.txt || echo "(nothing on stdout/stderr)"
+          echo "--- probe file ---"
+          if [ -f /tmp/rpcemu-probe.log ]; then
+            cat /tmp/rpcemu-probe.log
+          else
+            echo "(no probe file - our code did not run at all)"
+          fi
+          echo "--- verdict ---"
+          if [ -s /tmp/rpcemu-probe.log ] && ! grep -q 'RPCEMU-PROBE' plain.txt; then
+            echo "our code RUNS; its stdio output is not reaching the captured stream"
+          elif [ -s /tmp/rpcemu-probe.log ]; then
+            echo "our code RUNS and stdio works"
+          else
+            echo "our code does NOT run - startup diverges before static init"
+          fi
 
           echo
           echo "=== 8. lldb: breakpoint on main, and where it actually stops ==="
