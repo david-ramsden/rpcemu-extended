@@ -408,7 +408,7 @@ stage_slice() {
 	# populates that directory, so checking it here always failed and this whole
 	# block was silently skipped.
 	if awk -F'\t' '$1 ~ /^libSDL2/ { f = 1 } END { exit !f }' "$map"; then
-		local sdl3 sdl3_prev
+		local sdl3 sdl3_prev sdl3_name
 		# Ask the Homebrew that matches THIS slice. On Apple Silicon the arm64
 		# brew in /opt/homebrew is on PATH, so building the x86_64 slice would
 		# otherwise pick up an arm64 SDL3 and lipo would later refuse to fuse
@@ -438,9 +438,17 @@ stage_slice() {
 				# recursion below can reach SDL3 again under its versioned
 				# install name (libSDL3.0.dylib), which is the same file: that
 				# is a second copy of ~5MB in the bundle, not an error.
-				sdl3_prev=$(awk -F'\t' '$1 == "libSDL3.dylib" { print $2; exit }' "$map")
+				# Record it under its own install name, which is what every
+				# other entry in the map uses and what dependent libraries
+				# reference. Filing it as "libSDL3.dylib" while collect_deps()
+				# below reaches the same file as "libSDL3.0.dylib" put both in
+				# the bundle - the same 5MB library twice, under two names.
+				sdl3_name=$("$OTOOL" -D "$sdl3" 2>/dev/null | tail -n +2 | head -1)
+				sdl3_name=${sdl3_name##*/}
+				[ -n "$sdl3_name" ] || sdl3_name=${sdl3##*/}
+				sdl3_prev=$(awk -F'\t' -v b="$sdl3_name" '$1 == b { print $2; exit }' "$map")
 				if [ -z "$sdl3_prev" ]; then
-					printf '%s\t%s\n' "libSDL3.dylib" "$sdl3" >> "$map"
+					printf '%s\t%s\n' "$sdl3_name" "$sdl3" >> "$map"
 				elif [ "$sdl3_prev" != "$sdl3" ]; then
 					echo "error: [$arch] two different SDL3 libraries were found:"
 					echo "         $sdl3_prev"
@@ -453,7 +461,7 @@ stage_slice() {
 		done
 		echo "   SDL-related staged dependencies:"
 		grep -i sdl "$map" | sed 's/^/     /' || true
-		if ! awk -F'\t' '$1 == "libSDL3.dylib" { f = 1 } END { exit !f }' "$map"; then
+		if ! awk -F'\t' '$1 ~ /^libSDL3/ { f = 1 } END { exit !f }' "$map"; then
 			echo "error: [$arch] this SDL2 is sdl2-compat, which needs SDL3 at runtime,"
 			echo "       but no libSDL3.dylib was found to bundle. Install it (brew"
 			echo "       install sdl3) or link a real SDL2 instead. Without it the"
@@ -742,8 +750,10 @@ EOF
 		exit 1
 	fi
 	# sdl2-compat dlopen()s SDL3, so no load command records it: check by name.
+	# Matched by prefix: SDL3's install name carries a version (libSDL3.0.dylib),
+	# and that is the name the bundle uses.
 	if [ -f "$CONTENTS/Frameworks/libSDL2-2.0.0.dylib" ] && \
-	   [ ! -f "$CONTENTS/Frameworks/libSDL3.dylib" ]; then
+	   ! ls "$CONTENTS/Frameworks"/libSDL3*.dylib >/dev/null 2>&1; then
 		echo "error: libSDL2 is present but libSDL3 is not. If this SDL2 is"
 		echo "       sdl2-compat it loads SDL3 at runtime, and the app will stop"
 		echo "       in a modal alert before main() on any machine without it."

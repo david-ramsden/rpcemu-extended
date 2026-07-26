@@ -250,7 +250,17 @@ jobs:
             script="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$script"
           fi
+          # Both slices must end up with the SAME version of every dependency:
+          # they are fused with lipo, and a library built from two different
+          # upstream releases is not one library. The Intel and Apple Silicon
+          # Homebrews are separate installations that update independently, so
+          # without this they drift - a real run fused SDL3 3.4.12 (x86_64)
+          # against 3.4.10 (arm64) before the bundler caught it. "brew update"
+          # puts both on the same formula revision.
+          arch -x86_64 /usr/local/bin/brew update
           arch -x86_64 /usr/local/bin/brew install cmake ninja pkg-config wxwidgets sdl2 libvncserver
+          echo "==> x86_64 dependency versions"
+          arch -x86_64 /usr/local/bin/brew list --versions sdl2-compat sdl3 wxwidgets libvncserver || true
 
       - name: Build x86_64 slice + test (Rosetta)
         run: |
@@ -282,7 +292,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install cmake ninja pkg-config wxwidgets sdl2 libvncserver
+        run: |
+          # Both slices must end up with the SAME version of every dependency:
+          # they are fused with lipo, and a library built from two different
+          # upstream releases is not one library. The Intel and Apple Silicon
+          # Homebrews are separate installations that update independently, so
+          # without this they drift - a real run fused SDL3 3.4.12 (x86_64)
+          # against 3.4.10 (arm64) before the bundler caught it. "brew update"
+          # puts both on the same formula revision.
+          brew update
+          brew install cmake ninja pkg-config wxwidgets sdl2 libvncserver
+          echo "==> arm64 dependency versions"
+          brew list --versions sdl2-compat sdl3 wxwidgets libvncserver || true
 
       - name: Build arm64 slice (interpreter) + test
         run: |
