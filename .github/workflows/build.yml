@@ -481,6 +481,16 @@ jobs:
             || echo "  no probe symbols (internal linkage may hide them; see C)"
 
           echo
+          echo "=== C1b. exactly one application object? ==="
+          # A second wxIMPLEMENT_APP anywhere would show as extra definitions.
+          echo "--- wxCreateApp ---"
+          nm -m -arch arm64 "$exe" 2>/dev/null | grep wxCreateApp || echo "  (none)"
+          echo "--- wxGetApp ---"
+          nm -m -arch arm64 "$exe" 2>/dev/null | grep wxGetApp || echo "  (none)"
+          echo "--- our probe symbols (external linkage, __attribute__((used))) ---"
+          nm -m -arch arm64 "$exe" 2>/dev/null | grep -iE 'RpcemuProbeMark|RpcemuRawCtorProbe|StartupProbe' || echo "  (none - the probe is NOT in this binary)"
+
+          echo
           echo "=== C2. newer initializer formats (__init_offsets) ==="
           # Apple has moved these: older builds use __DATA,__mod_init_func,
           # newer linkers __DATA_CONST,__mod_init_func, and newest ld64 with

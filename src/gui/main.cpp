@@ -217,6 +217,25 @@ struct RpcemuStartupProbe {
 };
 __attribute__((used)) RpcemuStartupProbe g_rpcemu_startup_probe;
 
+/* The most robust form available: a plain constructor attribute calling write()
+   with a string literal. No libc formatting, no stack buffer, nothing that
+   could depend on stdio or locale being up. If THIS does not fire, the
+   executable's initializers are not being run at all. */
+__attribute__((constructor))
+static void RpcemuRawCtorProbe(void)
+{
+	static const char msg[] = "RPCEMU-PROBE: raw __attribute__((constructor)) fired\n";
+	ssize_t ignored = write(2, msg, sizeof(msg) - 1);
+	(void) ignored;
+
+	const int fd = open("/tmp/rpcemu-probe.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (fd >= 0) {
+		ignored = write(fd, msg, sizeof(msg) - 1);
+		(void) ignored;
+		close(fd);
+	}
+}
+
 /*
  * No wxIMPLEMENT_APP here: we provide our own main() so that headless mode can
  * run without ever constructing a wxApp (and therefore without gtk_init() and a
