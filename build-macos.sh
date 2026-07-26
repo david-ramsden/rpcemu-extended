@@ -748,13 +748,23 @@ EOF
 	echo "==> Verifying the bundle is self-contained"
 	bundle_ok=true
 	for obj in "$MACOSD"/* "$CONTENTS/Frameworks"/*; do
+		# Symlinks are skipped deliberately: they alias a real file in the same
+		# directory, which is examined on its own iteration, so following them
+		# would only check it twice.
+		[ -L "$obj" ] && continue
 		[ -f "$obj" ] || continue
 		file "$obj" 2>/dev/null | grep -q Mach-O || continue
 
 		"$OTOOL" -L "$obj" 2>/dev/null | tail -n +2 | awk '{ print $1 }' | while read -r dep; do
 			case "$dep" in
 				@executable_path/../Frameworks/*)
-					if [ ! -f "$CONTENTS/Frameworks/${dep##*/}" ]; then
+					# -e, not -f: the question is "does this runtime path
+					# resolve", and Frameworks holds symlinks as well as
+					# regular files (libSDL3.dylib -> libSDL3.0.dylib). Both
+					# tests follow links, but -e is the one that stays correct
+					# if a dependency ever arrives as something other than a
+					# plain file, and it fails on a dangling link either way.
+					if [ ! -e "$CONTENTS/Frameworks/${dep##*/}" ]; then
 						echo "   ! $(basename "$obj") needs ${dep##*/}, which is not in Contents/Frameworks"
 						echo BAD >> "$CONTENTS/.deps.fail"
 					fi
