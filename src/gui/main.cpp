@@ -333,6 +333,14 @@ bool RpcemuApp::OnInit()
 
 int main(int argc, char **argv)
 {
+	/* TEMPORARY PROBE - not for merge. Establishes whether this main() is the
+	   process entry point on macOS, or whether wxWidgets has taken it. */
+	fprintf(stderr, "RPCEMU-PROBE: main() entered, argc=%d\n", argc);
+	for (int i = 0; i < argc; i++) {
+		fprintf(stderr, "RPCEMU-PROBE: argv[%d]=%s\n", i, argv[i]);
+	}
+	fflush(stderr);
+
 	bool headless = false;
 	bool list_machines = false;
 	bool show_help = false;

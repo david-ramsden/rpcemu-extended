@@ -414,6 +414,31 @@ jobs:
       # is meant to catch. It runs so the output is on the record - once the
       # bundle honours --help, drop the "|| true" and macOS is held to the same
       # standard as the others.
+      # TEMPORARY - not for merge. Answers one question: is our main() the
+      # process entry point on macOS, or has wxWidgets taken it? Everything
+      # else about the macOS failure follows from that.
+      - name: PROBE - does main() run in the bundle?
+        timeout-minutes: 2
+        run: |
+          exe=releases/macos/RPCEmu.app/Contents/MacOS/rpcemu
+          echo "=== bundled binary, --help (backgrounded; it may not exit) ==="
+          "$exe" --help > probe.txt 2>&1 &
+          pid=$!
+          sleep 8
+          kill -9 "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat probe.txt || true
+          echo "=== verdict ==="
+          if grep -q 'RPCEMU-PROBE: main() entered' probe.txt; then
+            echo "main() IS the entry point - argv reaches it, so the bug is downstream"
+          else
+            echo "main() is NOT reached - wxWidgets owns the entry point on macOS"
+          fi
+          echo "=== is 'main' a macro in this wx build? ==="
+          wx-config --cppflags 2>/dev/null || true
+          grep -rn "define main" "$(wx-config --prefix 2>/dev/null)/include/wx-3.2/wx/app.h" 2>/dev/null || \
+            echo "(no 'define main' in wx/app.h)"
+
       - name: Command-line smoke test (informational)
         timeout-minutes: 3
         run: |
