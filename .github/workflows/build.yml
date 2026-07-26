@@ -586,6 +586,22 @@ jobs:
           # so it must be read out of the process rather than captured.
           sdl="releases/macos/RPCEmu.app/Contents/Frameworks/libSDL2-2.0.0.dylib"
 
+          echo "--- the three outputs that should expose a bundling mismatch ---"
+          echo "  otool -L on the STAGED slice (pre-lipo):"
+          otool -L build-mac-arm64/appstage/bin/rpcemu 2>&1 | sed 's/^/    /'
+          echo "  otool -L on the BUNDLED binary:"
+          otool -L "$exe" 2>&1 | grep -iE 'SDL|vnc|Frameworks' | sed 's/^/    /'
+          echo "  what is actually in Contents/Frameworks:"
+          find releases/macos/RPCEmu.app/Contents/Frameworks -name '*SDL*' -ls 2>&1 | sed 's/^/    /' \
+            || echo "    (no SDL in Contents/Frameworks)"
+          echo "  what is in the staged libs dir:"
+          ls -la build-mac-arm64/appstage/libs/ 2>&1 | sed 's/^/    /'
+          echo "  the dependency map the script built:"
+          cat build-mac-arm64/appstage-deps.map 2>&1 | sed 's/^/    /' || echo "    (no map)"
+          echo "  SDL as the compiler saw it (Homebrew original):"
+          otool -L "$(brew --prefix 2>/dev/null)/lib/libSDL2-2.0.0.dylib" 2>&1 | head -6 | sed 's/^/    /'
+
+          echo
           echo "--- is the shipped SDL2 what we think it is? ---"
           ls -la releases/macos/RPCEmu.app/Contents/Frameworks/ 2>/dev/null | head -20
           echo "  archs: $(lipo -archs "$sdl" 2>&1)"
