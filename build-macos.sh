@@ -316,6 +316,13 @@ collect_deps() {
 			continue
 		fi
 
+		# Canonicalise before comparing. Homebrew reaches the same file through
+		# /opt/homebrew/opt/<formula> (a symlink into Cellar/) as well as its
+		# real path, and recursing accumulates "../lib/../lib/" segments, so
+		# the same library arrives under several spellings. Without this the
+		# collision check below reports those as different libraries.
+		resolved=$(cd "$(dirname "$resolved")" 2>/dev/null && pwd -P)/${resolved##*/}
+
 		if [ -n "$prev" ]; then
 			if [ "$prev" != "$resolved" ]; then
 				echo "   ! two different libraries are both named $base:"
