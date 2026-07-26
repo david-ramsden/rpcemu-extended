@@ -153,19 +153,21 @@ def encode_png(w: int, h: int, fb: bytearray) -> bytes:
 
 def describe_screen(w: int, h: int, fb: bytearray) -> tuple[bool, str]:
     """
-    Decide whether the guest drew anything.
+    Decide whether the guest reached the desktop.
 
-    A fresh machine has no !Boot: machines/<name>/hostfs/ ships only the
-    HardDisc4 installer, which has to be run from RISC OS, so the guest stops
-    at a Supervisor prompt - white text on black, and nothing else. Asking for
-    a colourful desktop would fail every healthy boot.
+    The test machine is seeded with a !Boot that runs Desktop (see
+    seed_boot_file), so a healthy run shows the RISC OS desktop: a coloured
+    backdrop with an icon bar, not the Supervisor prompt a fresh machine stops
+    at.
 
-    So the question is only "did the guest render text", which separates a
-    working boot from a black or frozen screen. It stays true if a machine is
-    later given a !Boot and reaches the desktop, since that draws far more.
+    Two things are asked. The screen must not be blank or frozen, measured as
+    the share of pixels differing from the dominant colour. And it must have
+    the range of colour a desktop has and a text screen does not - which is
+    what makes this stronger than "something was drawn": a boot that dies after
+    printing an error still lights up pixels, but stays at two colours.
 
-    Deliberately loose: no reference image, so a cosmetic RISC OS, ROM or mode
-    change cannot fail the build.
+    Deliberately loose beyond that: no reference image, so a cosmetic RISC OS,
+    ROM or mode change cannot fail the build.
     """
     if w == 0 or h == 0:
         return False, "empty framebuffer"
@@ -193,13 +195,19 @@ def describe_screen(w: int, h: int, fb: bytearray) -> tuple[bool, str]:
         f"foreground {foreground:.2%}"
     )
 
-    # A Supervisor prompt is a handful of text lines on an otherwise empty
-    # screen, so the bar has to be low - but a screen that never drew anything
-    # is uniform to many decimal places, so there is a wide gap between them.
     if len(colours) < 2:
         return False, f"screen is a single flat colour, nothing was drawn ({summary})"
     if foreground < 0.0005:
         return False, f"screen is effectively blank, the guest drew almost nothing ({summary})"
+    # A two-colour screen is a text mode: either the Supervisor prompt, meaning
+    # !Boot did not run, or an error message. Both mean the desktop was not
+    # reached. A real desktop has a backdrop, icons and window furniture, so it
+    # clears this by a wide margin even in 16 colours.
+    if len(colours) < 8:
+        return False, (
+            f"screen looks like a text mode, not the desktop - !Boot may not have "
+            f"run ({summary})"
+        )
     return True, summary
 
 
@@ -208,13 +216,17 @@ def describe_screen(w: int, h: int, fb: bytearray) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-def make_test_config(src_cfg: str, dst_cfg: str, port: int) -> None:
+def make_test_config(src_cfg: str, dst_cfg: str, name: str, port: int) -> None:
     """
-    Copy the machine config with the VNC server switched on.
+    Copy the machine config with the VNC server switched on, under a new name.
 
     The shipped Default.cfg has vnc_enabled=0, and headless mode refuses to
     start without it. The tracked config is left alone: CI should not depend on
     mutating a file that is also a user-facing default.
+
+    The "name" field matters as much as the filename - config_load() derives the
+    machine data directory from it, so leaving it as "Default" would point the
+    test at machines/Default/ and write into the real machine's HostFS.
     """
     with open(src_cfg, "r", encoding="utf-8", errors="replace") as f:
         text = f.read()
@@ -225,12 +237,31 @@ def make_test_config(src_cfg: str, dst_cfg: str, port: int) -> None:
             return pat.sub(f"{key}={value}", t)
         return t.rstrip("\n") + f"\n{key}={value}\n"
 
+    text = set_key(text, "name", name)
     text = set_key(text, "vnc_enabled", "1")
     text = set_key(text, "vnc_port", str(port))
     text = set_key(text, "vnc_password", "")
 
     with open(dst_cfg, "w", encoding="utf-8") as f:
         f.write(text)
+
+
+def seed_boot_file(hostfs: str) -> None:
+    """
+    Give the test machine a !Boot that starts the desktop.
+
+    The shipped HostFS holds only HardDisc4.5.30.util, an installer that has to
+    be run from inside RISC OS, so a fresh machine stops at a Supervisor prompt.
+    RISC OS runs $.!Boot at startup if it is there, so a one-line Obey file
+    (filetype &feb) containing "Desktop" is enough to reach the desktop - which
+    makes this a far stronger check than "some text appeared". No leading "*":
+    the lines of an Obey file are commands already.
+    """
+    os.makedirs(hostfs, exist_ok=True)
+    # HostFS encodes the RISC OS filetype in the host filename suffix: ,feb is
+    # Obey. Without it the file is plain Text and RISC OS will not run it.
+    with open(os.path.join(hostfs, "!Boot,feb"), "w", encoding="ascii", newline="\n") as f:
+        f.write("Desktop\n")
 
 
 def wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float) -> None:
@@ -256,6 +287,10 @@ def main() -> int:
                     help="seconds to wait for the VNC server to come up")
     ap.add_argument("--settle", type=float, default=30.0,
                     help="seconds to let RISC OS finish drawing after VNC accepts")
+    ap.add_argument("--datadir",
+                    help="directory holding configs/, roms/ and machines/; "
+                         "found automatically when it is beside the binary or "
+                         "in a .app's Contents/Resources")
     ap.add_argument("--save", help="write the captured screen here as a PNG")
     args = ap.parse_args()
 
@@ -264,36 +299,73 @@ def main() -> int:
         print(f"error: no such binary: {binary}", file=sys.stderr)
         return 1
 
-    # Run from the release directory so configs/, roms/ and machines/ resolve
-    # the way they do for a user running the staged build.
+    # Locate the data directory. A staged Linux/Windows release keeps configs/,
+    # roms/ and machines/ beside the executable, but a macOS .app puts the
+    # read-only payload in Contents/Resources while the binary sits in
+    # Contents/MacOS with nothing next to it. Rather than encode either layout,
+    # look for the directory that actually holds configs/ and then pin it with
+    # RPCEMU_DATADIR, which the emulator honours on every platform.
     workdir = os.path.dirname(binary)
-    configs = os.path.join(workdir, "configs")
+    datadir = args.datadir
+    if not datadir:
+        candidates = [
+            workdir,                                              # staged release
+            os.path.join(os.path.dirname(workdir), "Resources"),  # .app bundle
+        ]
+        for c in candidates:
+            if os.path.isdir(os.path.join(c, "configs")):
+                datadir = c
+                break
+        if not datadir:
+            print("error: no 'configs' directory found near the binary; looked in:",
+                  file=sys.stderr)
+            for c in candidates:
+                print(f"  {c}", file=sys.stderr)
+            print("Pass --datadir to say where the data lives.", file=sys.stderr)
+            return 1
+
+    datadir = os.path.abspath(datadir)
+    configs = os.path.join(datadir, "configs")
     src_cfg = os.path.join(configs, f"{args.machine}.cfg")
     if not os.path.isfile(src_cfg):
         print(f"error: no config at {src_cfg}", file=sys.stderr)
         return 1
 
+    if not os.access(datadir, os.W_OK):
+        print(f"error: {datadir} is not writable; the test needs to add a config there",
+              file=sys.stderr)
+        return 1
+
     test_name = f"{args.machine}-vncsmoke"
     test_cfg = os.path.join(configs, f"{test_name}.cfg")
-    make_test_config(src_cfg, test_cfg, args.port)
+    make_test_config(src_cfg, test_cfg, test_name, args.port)
 
-    # The machine directory is keyed by the config's "name" field, so the test
-    # machine gets its own - seeded from the real one so it has the same CMOS
-    # and HostFS starting point.
-    machines = os.path.join(workdir, "machines")
+    # The machine directory is keyed by the config's "name" field, which
+    # make_test_config() has just set to test_name - so the test gets its own
+    # directory, seeded from the real one for the same CMOS starting point, and
+    # the real machine's HostFS is never touched.
+    machines = os.path.join(datadir, "machines")
     src_machine = os.path.join(machines, args.machine)
     dst_machine = os.path.join(machines, test_name)
-    if os.path.isdir(src_machine) and not os.path.isdir(dst_machine):
+    if os.path.isdir(dst_machine):
+        shutil.rmtree(dst_machine)  # start from a known state on a re-run
+    if os.path.isdir(src_machine):
         shutil.copytree(src_machine, dst_machine)
+
+    seed_boot_file(os.path.join(dst_machine, "hostfs"))
 
     env = dict(os.environ)
     env["RPCEMU_NO_GUI_MESSAGES"] = "1"
+    # Pin the data location so the emulator uses the tree we just prepared,
+    # rather than re-deriving it (a bundle would otherwise seed and use
+    # ~/RPCEmu, where our test config does not exist).
+    env["RPCEMU_DATADIR"] = datadir
 
     log = tempfile.NamedTemporaryFile(prefix="vnc-smoke-", suffix=".log", delete=False)
     print(f"==> starting {binary} --headless --machine {test_name}", flush=True)
     proc = subprocess.Popen(
         [binary, "--headless", "--machine", test_name],
-        cwd=workdir, env=env, stdout=log, stderr=subprocess.STDOUT,
+        cwd=datadir, env=env, stdout=log, stderr=subprocess.STDOUT,
     )
 
     rc = 1
