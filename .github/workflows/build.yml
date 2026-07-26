@@ -533,6 +533,17 @@ jobs:
           done
 
           echo
+          echo "=== D1b. full load commands and linked libraries (arm64) ==="
+          otool -arch arm64 -l "$exe" 2>/dev/null \
+            | grep -E 'cmd LC_|entryoff|sectname|name @|name /' \
+            | grep -vE 'sectname __(text|stubs|stub_helper|cstring|const|gcc_except_tab|unwind_info|got|la_symbol_ptr|data|common|bss)$' \
+            > loadcmds.txt || true
+          cat loadcmds.txt
+          echo "  --- linked libraries ---"
+          otool -arch arm64 -L "$exe" 2>/dev/null | sed 's/^/    /'
+          rm -f loadcmds.txt
+
+          echo
           echo "=== D2. what does the process ACTUALLY do? (no inference) ==="
           # Previous runs concluded "it started the GUI" from "it did not exit
           # in 30s". That is an inference, not an observation. Record the exit
