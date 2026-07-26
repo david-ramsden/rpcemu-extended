@@ -362,7 +362,7 @@ stage_slice() {
 	local arch="$1"
 	local build_dir="build-mac-$arch"
 	local stage="$build_dir/appstage"
-	local map="$build_dir/appstage-deps.map"
+	local map="$stage/deps.map"
 	local src base obj
 
 	rm -rf "$stage"
@@ -606,8 +606,17 @@ if [ "$DO_FUSE" = true ]; then
 			# different architectures always differ - so compare where they
 			# came from, which the per-slice maps record. Anything below the
 			# slice's own prefix is expected to differ only in that prefix.
-			x86_src=$(awk -F'\t' -v b="$base" '$1 == b { print $2; exit }' "$X86_DIR/appstage-deps.map" 2>/dev/null)
-			arm_src=$(awk -F'\t' -v b="$base" '$1 == b { print $2; exit }' "$ARM_DIR/appstage-deps.map" 2>/dev/null)
+			# The maps are per-slice build output, so they are present for a
+			# local two-arch build but not when the fusing job only downloaded
+			# the staged appstage directories. Missing maps mean the check
+			# cannot run, not that the libraries disagree - and awk exiting
+			# non-zero on a missing file would otherwise kill the script here,
+			# since a failing command substitution is fatal under set -e.
+			x86_src=""; arm_src=""
+			if [ -f "$X86_STAGE/deps.map" ] && [ -f "$ARM_STAGE/deps.map" ]; then
+				x86_src=$(awk -F'\t' -v b="$base" '$1 == b { print $2; exit }' "$X86_STAGE/deps.map")
+				arm_src=$(awk -F'\t' -v b="$base" '$1 == b { print $2; exit }' "$ARM_STAGE/deps.map")
+			fi
 			# Strip each slice's expected Homebrew prefix. What remains should
 			# be the same path under both - "Cellar/webp/1.6.0/lib/libwebp.7.dylib"
 			# and so on. If the tails differ, these are different libraries that
