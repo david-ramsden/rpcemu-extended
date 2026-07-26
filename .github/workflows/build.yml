@@ -50,14 +50,14 @@ jobs:
         run: |
           python3 tests/vnc_smoke.py \
             --binary releases/linux/amd64/rpcemu-recompiler \
-            --save vnc-smoke.png
+            --save vnc-smoke-linux-amd64.png
 
       - name: Upload the boot screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: vnc-smoke-linux-amd64
-          path: vnc-smoke.png
+          path: vnc-smoke-linux-amd64.png
           # A single PNG: skip the zip so it can be viewed from the run page
           # directly. "archive: false" allows one file only, which this is.
           archive: false
@@ -111,14 +111,14 @@ jobs:
         run: |
           python3 tests/vnc_smoke.py \
             --binary releases/linux/arm64/rpcemu-interpreter \
-            --save vnc-smoke.png
+            --save vnc-smoke-linux-arm64.png
 
       - name: Upload the boot screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: vnc-smoke-linux-arm64
-          path: vnc-smoke.png
+          path: vnc-smoke-linux-arm64.png
           # A single PNG: skip the zip so it can be viewed from the run page
           # directly. "archive: false" allows one file only, which this is.
           archive: false
@@ -214,14 +214,14 @@ jobs:
         run: |
           python3 tests/vnc_smoke.py \
             --binary releases/windows/amd64/rpcemu-recompiler.exe \
-            --save vnc-smoke.png
+            --save vnc-smoke-windows-amd64.png
 
       - name: Upload the boot screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: vnc-smoke-windows-amd64
-          path: vnc-smoke.png
+          path: vnc-smoke-windows-amd64.png
           # A single PNG: skip the zip so it can be viewed from the run page
           # directly. "archive: false" allows one file only, which this is.
           archive: false
@@ -410,14 +410,14 @@ jobs:
         run: |
           python3 tests/vnc_smoke.py \
             --binary releases/macos/RPCEmu.app/Contents/MacOS/rpcemu \
-            --save vnc-smoke.png
+            --save vnc-smoke-macos-universal.png
 
       - name: Upload the boot screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: vnc-smoke-macos-universal
-          path: vnc-smoke.png
+          path: vnc-smoke-macos-universal.png
           # A single PNG: skip the zip so it can be viewed from the run page
           # directly. "archive: false" allows one file only, which this is.
           archive: false
