@@ -20,7 +20,7 @@ about, not two.
 
 Usage:
   vnc_smoke.py --binary <path> [--machine Default] [--port 5900]
-               [--boot-timeout 90] [--settle 30] [--save shot.png]
+               [--boot-timeout 60] [--settle 15] [--save shot.png]
 
 Exit status is 0 when the machine booted and drew to the screen, and 1
 otherwise, with the reason on stderr.
@@ -283,10 +283,13 @@ def main() -> int:
     ap.add_argument("--machine", default="Default", help="machine config name")
     ap.add_argument("--port", type=int, default=5900, help="VNC port to use")
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--boot-timeout", type=float, default=90.0,
-                    help="seconds to wait for the VNC server to come up")
-    ap.add_argument("--settle", type=float, default=30.0,
-                    help="seconds to let RISC OS finish drawing after VNC accepts")
+    ap.add_argument("--boot-timeout", type=float, default=60.0,
+                    help="seconds to wait for the VNC server to come up "
+                         "(it listens about a second in, so this is slack for a "
+                         "loaded runner, not an expected wait)")
+    ap.add_argument("--settle", type=float, default=15.0,
+                    help="seconds to let RISC OS reach the desktop after VNC "
+                         "accepts (a boot takes about ten)")
     ap.add_argument("--datadir",
                     help="directory holding configs/, roms/ and machines/; "
                          "found automatically when it is beside the binary or "

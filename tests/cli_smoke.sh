@@ -20,15 +20,50 @@ BIN="${1:?usage: cli_smoke.sh <binary>}"
 export RPCEMU_NO_GUI_MESSAGES=1
 
 failures=0
+hung=0
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 # run <expected-status> <description> -- <args...>
 # Captures stdout+stderr into $tmp/out and checks the exit status.
+# Every one of these options is meant to print and exit without ever reaching
+# wxEntry(), so none should take more than an instant. A run that does not
+# finish means the binary started the GUI instead - a failure in its own right,
+# and one that would otherwise hang the job until its timeout. macOS ships no
+# timeout(1), so the watchdog is hand-rolled and works the same everywhere.
+TIMEOUT="${CLI_SMOKE_TIMEOUT:-20}"
+
 run() {
 	local want="$1" desc="$2"; shift 3   # drop the "--"
-	local rc=0
-	"$BIN" "$@" > "$tmp/out" 2>&1 || rc=$?
+	local rc=0 pid i
+
+	# Once one invocation has hung there is nothing left to learn from the rest.
+	if [ "$hung" -ne 0 ]; then
+		echo "SKIP: $desc (an earlier check did not return)"
+		return 1
+	fi
+
+	"$BIN" "$@" > "$tmp/out" 2>&1 &
+	pid=$!
+	for ((i = 0; i < TIMEOUT; i++)); do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 1
+	done
+	if kill -0 "$pid" 2>/dev/null; then
+		kill -9 "$pid" 2>/dev/null || true
+		wait "$pid" 2>/dev/null || true
+		echo "FAIL: $desc: did not exit within ${TIMEOUT}s (it should print and return;"
+		echo "      taking this long means it started the GUI instead)"
+		sed 's/^/      /' "$tmp/out"
+		failures=$((failures + 1))
+		# One hang means the binary does not return from these paths at all, so
+		# the remaining checks would each burn the same wait for the same
+		# answer. Stop here rather than spending ten timeouts to learn it once.
+		hung=1
+		return 1
+	fi
+	wait "$pid" || rc=$?
+
 	if [ "$rc" != "$want" ]; then
 		echo "FAIL: $desc: expected exit $want, got $rc"
 		sed 's/^/      /' "$tmp/out"

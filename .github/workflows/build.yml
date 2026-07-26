@@ -46,7 +46,7 @@ jobs:
       # screen has a desktop's range of colour, not whether it matches a
       # reference image, so cosmetic changes cannot fail the build.
       - name: Headless boot and VNC screenshot
-        timeout-minutes: 10
+        timeout-minutes: 3
         run: |
           python3 tests/vnc_smoke.py \
             --binary releases/linux/amd64/rpcemu-recompiler \
@@ -104,7 +104,7 @@ jobs:
       # screen has a desktop's range of colour, not whether it matches a
       # reference image, so cosmetic changes cannot fail the build.
       - name: Headless boot and VNC screenshot
-        timeout-minutes: 10
+        timeout-minutes: 3
         run: |
           python3 tests/vnc_smoke.py \
             --binary releases/linux/arm64/rpcemu-interpreter \
@@ -204,17 +204,17 @@ jobs:
       # screen has a desktop's range of colour, not whether it matches a
       # reference image, so cosmetic changes cannot fail the build.
       - name: Headless boot and VNC screenshot
-        timeout-minutes: 10
+        timeout-minutes: 3
         run: |
           python3 tests/vnc_smoke.py \
-            --binary releases/linux/amd64/rpcemu-recompiler \
+            --binary releases/windows/amd64/rpcemu-recompiler.exe \
             --save vnc-smoke.png
 
       - name: Upload the boot screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vnc-smoke-linux-amd64
+          name: vnc-smoke-windows-amd64
           path: vnc-smoke.png
           if-no-files-found: ignore
 
@@ -416,7 +416,7 @@ jobs:
       # bundle honours --help, drop the "|| true" and macOS is held to the same
       # standard as the others.
       - name: Command-line smoke test (informational)
-        timeout-minutes: 5
+        timeout-minutes: 3
         run: |
           bash tests/cli_smoke.sh releases/macos/RPCEmu.app/Contents/MacOS/rpcemu || \
             echo "note: the command-line checks did not pass on macOS; see above."
@@ -425,7 +425,7 @@ jobs:
       # why. Run the binary inside the bundle, which is what a user launches,
       # so a boot that only fails when bundled is caught here.
       - name: Headless boot and VNC screenshot
-        timeout-minutes: 10
+        timeout-minutes: 3
         run: |
           python3 tests/vnc_smoke.py \
             --binary releases/macos/RPCEmu.app/Contents/MacOS/rpcemu \
