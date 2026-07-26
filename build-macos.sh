@@ -716,6 +716,18 @@ EOF
 	# open (right-click > Open once); this is documented in the README.
 	# RPCEMU_MACOS_CODESIGN=1 additionally applies the hardened runtime + JIT
 	# entitlement, needed only for a future recompiler arm64 slice (MAP_JIT).
+	# sdl2-compat dlopen()s "@loader_path/libSDL3.dylib" by that exact name, but
+	# SDL3's install name is versioned (libSDL3.0.dylib) and that is what gets
+	# bundled. Link the unversioned name to it, before signing so the signature
+	# covers the finished layout. Bundling the file twice would also work but
+	# wastes 5MB; leaving it out means sdl2-compat fails inside a dyld
+	# initializer and the app never reaches main() at all.
+	if ls "$CONTENTS/Frameworks"/libSDL3.*.dylib >/dev/null 2>&1 && \
+	   [ ! -e "$CONTENTS/Frameworks/libSDL3.dylib" ]; then
+		( cd "$CONTENTS/Frameworks" && ln -sf "$(ls libSDL3.*.dylib | head -1)" libSDL3.dylib )
+		echo "==> linked Frameworks/libSDL3.dylib -> $(readlink "$CONTENTS/Frameworks/libSDL3.dylib")"
+	fi
+
 	if [ "$(uname -s)" = Darwin ] && command -v codesign >/dev/null 2>&1; then
 		if [ "${RPCEMU_MACOS_CODESIGN:-0}" = 1 ] && [ -f resources/rpcemu-jit.entitlements ]; then
 			echo "==> codesign (ad-hoc, hardened runtime + JIT entitlement)"
@@ -768,11 +780,8 @@ EOF
 		echo "error: the bundle is not self-contained (see above)."
 		exit 1
 	fi
-	# sdl2-compat dlopen()s SDL3, so no load command records it: check by name.
-	# Matched by prefix: SDL3's install name carries a version (libSDL3.0.dylib),
-	# and that is the name the bundle uses.
 	if [ -f "$CONTENTS/Frameworks/libSDL2-2.0.0.dylib" ] && \
-	   ! ls "$CONTENTS/Frameworks"/libSDL3*.dylib >/dev/null 2>&1; then
+	   [ ! -e "$CONTENTS/Frameworks/libSDL3.dylib" ]; then
 		echo "error: libSDL2 is present but libSDL3 is not. If this SDL2 is"
 		echo "       sdl2-compat it loads SDL3 at runtime, and the app will stop"
 		echo "       in a modal alert before main() on any machine without it."
