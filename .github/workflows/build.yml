@@ -37,6 +37,28 @@ jobs:
           ./releases/linux/amd64/rpcemu-recompiler --help
           ./releases/linux/amd64/rpcemu-recompiler --list-machines
 
+      # Boot the machine for real and look at the screen. Everything above stops
+      # at "the binary starts and parses its arguments"; this drives a full boot
+      # over the built-in VNC server, so a break in the CPU, memory, VIDC, ROM
+      # loading or the VNC server itself shows up here rather than in a user's
+      # first run. The screen check is deliberately loose - it asks whether the
+      # framebuffer looks like a drawn desktop, not whether it matches a
+      # reference image, so a cosmetic RISC OS change does not fail the build.
+      - name: Headless boot and VNC screenshot
+        timeout-minutes: 10
+        run: |
+          python3 tests/vnc_smoke.py \
+            --binary releases/linux/amd64/rpcemu-recompiler \
+            --save vnc-smoke.png
+
+      - name: Upload the boot screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnc-smoke-linux-amd64
+          path: vnc-smoke.png
+          if-no-files-found: ignore
+
       - name: Upload Linux amd64 release
         uses: actions/upload-artifact@v4
         with:
@@ -72,6 +94,28 @@ jobs:
           ls -la releases/linux/arm64/
           ./releases/linux/arm64/rpcemu-interpreter --help
           ./releases/linux/arm64/rpcemu-interpreter --list-machines
+
+      # Boot the machine for real and look at the screen. Everything above stops
+      # at "the binary starts and parses its arguments"; this drives a full boot
+      # over the built-in VNC server, so a break in the CPU, memory, VIDC, ROM
+      # loading or the VNC server itself shows up here rather than in a user's
+      # first run. The screen check is deliberately loose - it asks whether the
+      # framebuffer looks like a drawn desktop, not whether it matches a
+      # reference image, so a cosmetic RISC OS change does not fail the build.
+      - name: Headless boot and VNC screenshot
+        timeout-minutes: 10
+        run: |
+          python3 tests/vnc_smoke.py \
+            --binary releases/linux/arm64/rpcemu-interpreter \
+            --save vnc-smoke.png
+
+      - name: Upload the boot screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnc-smoke-linux-arm64
+          path: vnc-smoke.png
+          if-no-files-found: ignore
 
       - name: Upload Linux arm64 release
         uses: actions/upload-artifact@v4
@@ -173,6 +217,24 @@ jobs:
             fi
             rm -f unknown.txt
           done
+
+      # Boot the machine for real and look at the screen - see the Linux job for
+      # why. Windows is the platform where the emulator has needed the most
+      # attention, so it gets the same end-to-end check.
+      - name: Headless boot and VNC screenshot
+        timeout-minutes: 10
+        run: |
+          python3 tests/vnc_smoke.py \
+            --binary releases/windows/amd64/rpcemu-recompiler.exe \
+            --save vnc-smoke.png
+
+      - name: Upload the boot screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnc-smoke-windows-amd64
+          path: vnc-smoke.png
+          if-no-files-found: ignore
 
       - name: Upload Windows amd64 release
         uses: actions/upload-artifact@v4
@@ -345,6 +407,24 @@ jobs:
           else
             echo "Note: skipping the x86_64 slice check, Rosetta 2 is not installed on this runner."
           fi
+
+      # Boot the machine for real and look at the screen - see the Linux job for
+      # why. Run the binary inside the bundle, which is what a user launches,
+      # so a boot that only fails when bundled is caught here.
+      - name: Headless boot and VNC screenshot
+        timeout-minutes: 10
+        run: |
+          python3 tests/vnc_smoke.py \
+            --binary releases/macos/RPCEmu.app/Contents/MacOS/rpcemu \
+            --save vnc-smoke.png
+
+      - name: Upload the boot screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnc-smoke-macos-universal
+          path: vnc-smoke.png
+          if-no-files-found: ignore
 
       - name: Upload macOS universal release
         uses: actions/upload-artifact@v4
