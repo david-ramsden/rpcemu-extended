@@ -579,6 +579,53 @@ jobs:
           rm -f d2.txt
 
           echo
+          echo "=== D3. WHY does SDL2's initializer take its error path? ==="
+          # The backtrace shows dyld running libSDL2's dllinit, which calls
+          # error_dialog() and blocks in -[NSAlert runModal] before our code
+          # runs. The alert text is drawn in a window, not written to a stream,
+          # so it must be read out of the process rather than captured.
+          sdl="releases/macos/RPCEmu.app/Contents/Frameworks/libSDL2-2.0.0.dylib"
+
+          echo "--- is the shipped SDL2 what we think it is? ---"
+          ls -la releases/macos/RPCEmu.app/Contents/Frameworks/ 2>/dev/null | head -20
+          echo "  archs: $(lipo -archs "$sdl" 2>&1)"
+          file "$sdl" 2>&1 | sed 's/^/  /'
+          echo "  install name + deps:"
+          otool -L "$sdl" 2>/dev/null | sed 's/^/    /'
+          echo "  signature:"
+          codesign -dvv "$sdl" 2>&1 | head -8
+
+          echo
+          echo "--- can dyld satisfy every dependency of the executable? ---"
+          # This walks the whole graph without running anything.
+          DYLD_PRINT_LIBRARIES=1 "$exe" --help > dyldlibs.txt 2>&1 &
+          pid=$!
+          for i in $(seq 1 8); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          kill -9 "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          echo "  loaded images (SDL and anything failing):"
+          grep -iE 'SDL|not found|not loaded|Reason' dyldlibs.txt | head -20 || echo "  (none)"
+          rm -f dyldlibs.txt
+
+          echo
+          echo "--- the alert text itself, read out of the blocked process ---"
+          "$exe" --help > /dev/null 2>&1 &
+          pid=$!
+          sleep 8
+          if kill -0 "$pid" 2>/dev/null; then
+            # SDL builds its message with SDL_SetError/SDL_GetError; the string
+            # is in the process's heap by the time the alert is up.
+            lldb -b -p "$pid" \
+              -o 'expression (char *)SDL_GetError()' \
+              -o 'thread backtrace' \
+              -o 'detach' -o 'quit' 2>&1 | head -25 || echo "  (lldb attach failed)"
+          else
+            echo "  (process exited; nothing to read)"
+          fi
+          kill -9 "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+
+          echo
           echo "=== E. lldb: which image is loaded, and is OUR main reached? ==="
           # Scoped to the executable, not every image with a symbol named main.
           # Breaking on the NAME resolved across 38 images last time and proved
