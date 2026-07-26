@@ -30,9 +30,6 @@
 
 #ifdef __WXMSW__
 #include <windows.h>
-#else
-#include <fcntl.h>    /* TEMPORARY PROBE */
-#include <unistd.h>   /* TEMPORARY PROBE */
 #endif
 
 #include "data_paths.h"
@@ -174,66 +171,6 @@ static bool FileIsReadable(const char *path)
 	}
 	fclose(f);
 	return true;
-}
-
-/* TEMPORARY PROBE - not for merge.
- *
- * Records progress through startup WITHOUT using C stdio. The previous probe
- * printed with fprintf(stderr) and nothing appeared, while Cocoa's own NSLog
- * messages did - but NSLog goes to the unified logging system, not to stderr
- * via stdio, so that told us nothing about whether our code ran. These write
- * with write(2) directly, and also append to a file opened by name, so neither
- * depends on stdio being connected to anything.
- */
-/* Deliberately NOT in an anonymous namespace, and marked used: internal
-   linkage plus dead-stripping (or LTO) could otherwise drop the constructor
-   entirely, which would look identical to "the constructor never ran". */
-__attribute__((used))
-void RpcemuProbeMark(const char *what)
-{
-	char line[256];
-	const int n = snprintf(line, sizeof(line), "RPCEMU-PROBE: %s\n", what);
-
-	if (n > 0) {
-		ssize_t ignored = write(2, line, (size_t) n);  /* raw fd 2, no stdio */
-		(void) ignored;
-	}
-
-	/* And to a file, in case fd 2 is closed or redirected by the launcher. */
-	const int fd = open("/tmp/rpcemu-probe.log",
-	                    O_WRONLY | O_CREAT | O_APPEND, 0644);
-	if (fd >= 0) {
-		if (n > 0) {
-			ssize_t ignored = write(fd, line, (size_t) n);
-			(void) ignored;
-		}
-		close(fd);
-	}
-}
-
-struct RpcemuStartupProbe {
-	RpcemuStartupProbe()  { RpcemuProbeMark("static initialiser ran (before main)"); }
-	~RpcemuStartupProbe() { RpcemuProbeMark("static destructor ran (process exiting)"); }
-};
-__attribute__((used)) RpcemuStartupProbe g_rpcemu_startup_probe;
-
-/* The most robust form available: a plain constructor attribute calling write()
-   with a string literal. No libc formatting, no stack buffer, nothing that
-   could depend on stdio or locale being up. If THIS does not fire, the
-   executable's initializers are not being run at all. */
-__attribute__((constructor))
-static void RpcemuRawCtorProbe(void)
-{
-	static const char msg[] = "RPCEMU-PROBE: raw __attribute__((constructor)) fired\n";
-	ssize_t ignored = write(2, msg, sizeof(msg) - 1);
-	(void) ignored;
-
-	const int fd = open("/tmp/rpcemu-probe.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
-	if (fd >= 0) {
-		ignored = write(fd, msg, sizeof(msg) - 1);
-		(void) ignored;
-		close(fd);
-	}
 }
 
 /*
@@ -396,15 +333,6 @@ bool RpcemuApp::OnInit()
 
 int main(int argc, char **argv)
 {
-	/* TEMPORARY PROBE - not for merge. Paired with the symbol inspection in CI:
-	   this distinguishes "main() exists but never runs" from "the binary does
-	   not contain this main() at all". */
-	{
-		char m[128];
-		snprintf(m, sizeof(m), "main() entered, argc=%d", argc);
-		RpcemuProbeMark(m);
-	}
-
 	bool headless = false;
 	bool list_machines = false;
 	bool show_help = false;
