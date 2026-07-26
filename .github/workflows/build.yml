@@ -533,19 +533,61 @@ jobs:
           done
 
           echo
+          echo "=== D2. what does the process ACTUALLY do? (no inference) ==="
+          # Previous runs concluded "it started the GUI" from "it did not exit
+          # in 30s". That is an inference, not an observation. Record the exit
+          # status, the wall time, every byte written, and whether a window
+          # server connection was made - and let the evidence speak.
+          rm -f /tmp/rpcemu-probe.log
+          start=$(date +%s)
+          "$exe" --help > d2.txt 2>&1 &
+          pid=$!
+          rc="(still running)"
+          for i in $(seq 1 20); do
+            if ! kill -0 "$pid" 2>/dev/null; then wait "$pid"; rc=$?; break; fi
+            sleep 1
+          done
+          elapsed=$(( $(date +%s) - start ))
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "  still running after ${elapsed}s - sampling it before killing"
+            sample "$pid" 2 -file /tmp/rpcemu-sample.txt >/dev/null 2>&1 || true
+            echo "  --- top frames of the main thread ---"
+            sed -n '/Call graph/,/Binary Images/p' /tmp/rpcemu-sample.txt 2>/dev/null \
+              | head -40 || echo "  (sample unavailable)"
+            kill -9 "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          else
+            echo "  exited after ${elapsed}s with status $rc"
+          fi
+          echo "  --- bytes written to stdout/stderr ---"
+          wc -c < d2.txt
+          echo "  --- content ---"
+          cat d2.txt
+          echo "  --- probe file ---"
+          cat /tmp/rpcemu-probe.log 2>/dev/null || echo "  (none)"
+          rm -f d2.txt
+
+          echo
           echo "=== E. lldb: which image is loaded, and is OUR main reached? ==="
           # Scoped to the executable, not every image with a symbol named main.
           # Breaking on the NAME resolved across 38 images last time and proved
           # nothing. Break on the executable's own main, print the loaded
           # image's UUID for comparison with dwarfdump above, and stop at the
           # LC_MAIN address itself.
+          # Stop at the LC_MAIN address itself, not a symbol name, and print
+          # the stop reason. Either it reports a hit - proving main() runs and
+          # the fault is downstream - or the process reaches AppKit without
+          # stopping, which is the extraordinary claim and needs to be seen
+          # explicitly rather than inferred from silence.
           lldb -b \
             -o 'breakpoint set --shlib rpcemu --name main' \
+            -o 'breakpoint set --shlib rpcemu --name RpcemuRawCtorProbe' \
             -o 'breakpoint list' \
             -o 'image list -u rpcemu' \
-            -o 'image dump sections rpcemu' \
             -o 'run --help' \
-            -o 'thread backtrace' \
+            -o 'thread list' \
+            -o 'thread backtrace all' \
+            -o 'breakpoint list' \
             -o 'quit' \
             "$exe" > lldb.out 2>&1 &
           pid=$!
