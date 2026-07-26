@@ -386,51 +386,6 @@ jobs:
           fi
           echo "✓ all dependencies are bundled or system"
 
-          # Then a bounded attempt at actually running it, for information only.
-          # A GUI application launched with --help is expected to print usage and
-          # exit before wxEntry(), and in the bundle it does not: it starts the
-          # GUI instead, which is why this does not gate the build. It is kept
-          # because the output says which, and because a binary that cannot load
-          # at all fails here in seconds with dyld's own diagnosis.
-          #
-          # The watchdog is hand-rolled: macOS ships no timeout(1), and leaning
-          # on the job-level timeout-minutes instead cost twenty minutes of
-          # runner time the first time this test did not exit.
-          try_help() {
-            local out="help-$$.out" pid i
-            rm -f "$out"
-            "$@" --help >"$out" 2>&1 &
-            pid=$!
-            for i in $(seq 1 30); do
-              kill -0 "$pid" 2>/dev/null || break
-              sleep 1
-            done
-            if kill -0 "$pid" 2>/dev/null; then
-              kill -9 "$pid" 2>/dev/null || true
-              wait "$pid" 2>/dev/null || true
-              echo "note: '$*' did not exit within 30s. That is not necessarily a GUI"
-              echo "      launch: a dependency's dyld initializer can block before main()"
-              echo "      runs at all - see the SDL3 handling in build-macos.sh."
-            elif wait "$pid"; then
-              if grep -q '^Usage:' "$out"; then
-                echo "note: '$*' printed usage and exited."
-              else
-                echo "note: '$*' exited cleanly but printed no usage."
-              fi
-            else
-              echo "note: '$*' exited non-zero. Output:"
-              cat "$out"
-            fi
-          }
-          # The staged slice as well as the bundled one: if that honours --help
-          # and the bundled binary does not, the difference is the bundle rather
-          # than the code. Restore the executable bit first - downloading an
-          # artifact does not preserve it, which is why the last run could not
-          # answer this.
-          chmod +x build-mac-arm64/appstage/bin/rpcemu || true
-          try_help build-mac-arm64/appstage/bin/rpcemu
-          try_help "$MACOSD/rpcemu"
-
       # The same command-line checks the Linux and Windows jobs run, on the
       # binary inside the bundle - which is what a user launches.
       - name: Command-line smoke test
