@@ -40,28 +40,33 @@ ONE_ARCH=""
 # used to be a no-op that relied on the architecture being parsed as a bare
 # argument. That accepted "build-macos.sh arm64", and silently ignored a bare
 # "--arch" with nothing after it.
+FUSE_REQUESTED=false
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--zip|-z) MAKE_ZIP=true ;;
 		--arch)
 			case "${2:-}" in
-				x86_64|arm64) ONE_ARCH="$2"; DO_FUSE=false; shift ;;
+				x86_64|arm64) ONE_ARCH="$2"; [ "$FUSE_REQUESTED" = true ] || DO_FUSE=false; shift ;;
 				"") echo "error: --arch needs an architecture (x86_64 or arm64)"; exit 2 ;;
 				*)  echo "error: unknown architecture '$2' (want x86_64 or arm64)"; exit 2 ;;
 			esac
 			;;
 		--arch=*)
 			case "${1#--arch=}" in
-				x86_64|arm64) ONE_ARCH="${1#--arch=}"; DO_FUSE=false ;;
+				x86_64|arm64) ONE_ARCH="${1#--arch=}"; [ "$FUSE_REQUESTED" = true ] || DO_FUSE=false ;;
 				*) echo "error: unknown architecture '${1#--arch=}' (want x86_64 or arm64)"; exit 2 ;;
 			esac
 			;;
-		--fuse) DO_BUILD=false; DO_FUSE=true ;;
+		--fuse) DO_BUILD=false; DO_FUSE=true; FUSE_REQUESTED=true ;;
 		--help|-h) echo "Usage: $0 [--arch x86_64|arm64] [--fuse] [--zip]"; exit 0 ;;
 		*) echo "unknown option: $1"; exit 2 ;;
 	esac
 	shift
 done
+# "--arch x --fuse" means build that slice and fuse it with the other one that
+# already exists, which is what a CI job building each arch separately wants.
+# Given in either order, an explicit --fuse wins over --arch's default.
+[ "$FUSE_REQUESTED" = true ] && DO_FUSE=true
 
 get_version() { [ -f VERSION ] && tr -d ' \t\r\n' < VERSION || echo "0.0.0"; }
 VERSION=$(get_version)
@@ -392,15 +397,45 @@ stage_slice() {
 	# populates that directory, so checking it here always failed and this whole
 	# block was silently skipped.
 	if awk -F'\t' '$1 ~ /^libSDL2/ { f = 1 } END { exit !f }' "$map"; then
-		local sdl3
+		local sdl3 sdl3_prev
+		# Ask the Homebrew that matches THIS slice. On Apple Silicon the arm64
+		# brew in /opt/homebrew is on PATH, so building the x86_64 slice would
+		# otherwise pick up an arm64 SDL3 and lipo would later refuse to fuse
+		# it (or, worse, the slice would carry the wrong architecture).
+		local brew_x86=/usr/local/bin/brew brew_arm=/opt/homebrew/bin/brew
+		local brew_bin=""
+		if [ "$arch" = x86_64 ] && [ -x "$brew_x86" ]; then
+			brew_bin="$brew_x86"
+		elif [ "$arch" = arm64 ] && [ -x "$brew_arm" ]; then
+			brew_bin="$brew_arm"
+		fi
 		for sdl3 in \
-			"$(brew --prefix sdl3 2>/dev/null)/lib/libSDL3.dylib" \
-			"$(brew --prefix 2>/dev/null)/lib/libSDL3.dylib" \
-			/opt/homebrew/lib/libSDL3.dylib \
-			/usr/local/lib/libSDL3.dylib
+			"$([ -n "$brew_bin" ] && "$brew_bin" --prefix sdl3 2>/dev/null)/lib/libSDL3.dylib" \
+			"$([ -n "$brew_bin" ] && "$brew_bin" --prefix 2>/dev/null)/lib/libSDL3.dylib" \
+			"$([ "$arch" = x86_64 ] && echo /usr/local || echo /opt/homebrew)/lib/libSDL3.dylib"
 		do
+			# The prefix should imply the architecture, but check rather than
+			# assume: fusing a mismatched slice fails much later and far less
+			# clearly than saying so here.
+			if [ -f "$sdl3" ] && ! lipo -archs "$sdl3" 2>/dev/null | tr ' ' '\n' | grep -qx "$arch"; then
+				echo "   ! $sdl3 is not $arch ($(lipo -archs "$sdl3" 2>/dev/null)); ignoring"
+				continue
+			fi
 			if [ -f "$sdl3" ]; then
-				printf '%s\t%s\n' "libSDL3.dylib" "$sdl3" >> "$map"
+				# Record it the same way collect_deps() would, so a name
+				# already in the map is compared rather than duplicated. The
+				# recursion below can reach SDL3 again under its versioned
+				# install name (libSDL3.0.dylib), which is the same file: that
+				# is a second copy of ~5MB in the bundle, not an error.
+				sdl3_prev=$(awk -F'\t' '$1 == "libSDL3.dylib" { print $2; exit }' "$map")
+				if [ -z "$sdl3_prev" ]; then
+					printf '%s\t%s\n' "libSDL3.dylib" "$sdl3" >> "$map"
+				elif [ "$sdl3_prev" != "$sdl3" ]; then
+					echo "error: [$arch] two different SDL3 libraries were found:"
+					echo "         $sdl3_prev"
+					echo "         $sdl3"
+					exit 1
+				fi
 				collect_deps "$sdl3" "$map" "$(dirname "$sdl3")"
 				break
 			fi
