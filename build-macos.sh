@@ -344,7 +344,10 @@ stage_slice() {
 	# here is Contents/Frameworks/libSDL2-2.0.0.dylib, so placing SDL3 beside it
 	# is enough - no install-name rewriting of the reference is possible anyway,
 	# since there is no reference to rewrite.
-	if [ -f "$stage/libs/libSDL2-2.0.0.dylib" ]; then
+	# Test the dependency map, not $stage/libs: the copy loop below is what
+	# populates that directory, so checking it here always failed and this whole
+	# block was silently skipped.
+	if awk -F'\t' '$1 ~ /^libSDL2/ { f = 1 } END { exit !f }' "$map"; then
 		local sdl3
 		for sdl3 in \
 			"$(brew --prefix sdl3 2>/dev/null)/lib/libSDL3.dylib" \
@@ -358,6 +361,8 @@ stage_slice() {
 				break
 			fi
 		done
+		echo "   SDL-related staged dependencies:"
+		grep -i sdl "$map" | sed 's/^/     /' || true
 		if ! awk -F'\t' '$1 == "libSDL3.dylib" { f = 1 } END { exit !f }' "$map"; then
 			echo "error: [$arch] this SDL2 is sdl2-compat, which needs SDL3 at runtime,"
 			echo "       but no libSDL3.dylib was found to bundle. Install it (brew"
