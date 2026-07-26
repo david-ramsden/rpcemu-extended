@@ -54,14 +54,17 @@ jobs:
 
       - name: Upload the boot screenshot
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vnc-smoke-linux-amd64
           path: vnc-smoke.png
+          # A single PNG: skip the zip so it can be viewed from the run page
+          # directly. "archive: false" allows one file only, which this is.
+          archive: false
           if-no-files-found: ignore
 
       - name: Upload Linux amd64 release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rpcemu-linux-amd64
           path: |
@@ -112,14 +115,17 @@ jobs:
 
       - name: Upload the boot screenshot
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vnc-smoke-linux-arm64
           path: vnc-smoke.png
+          # A single PNG: skip the zip so it can be viewed from the run page
+          # directly. "archive: false" allows one file only, which this is.
+          archive: false
           if-no-files-found: ignore
 
       - name: Upload Linux arm64 release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rpcemu-linux-arm64
           path: |
@@ -212,14 +218,17 @@ jobs:
 
       - name: Upload the boot screenshot
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vnc-smoke-windows-amd64
           path: vnc-smoke.png
+          # A single PNG: skip the zip so it can be viewed from the run page
+          # directly. "archive: false" allows one file only, which this is.
+          archive: false
           if-no-files-found: ignore
 
       - name: Upload Windows amd64 release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rpcemu-windows-amd64
           path: |
@@ -274,7 +283,7 @@ jobs:
           ./build-macos.sh --arch x86_64
 
       - name: Upload x86_64 slice
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-slice-x86_64
           # The staged tree, not just bin/: it carries this slice's bundled
@@ -311,7 +320,7 @@ jobs:
           ./build-macos.sh --arch arm64
 
       - name: Upload arm64 slice
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-slice-arm64
           path: build-mac-arm64/appstage/
@@ -326,13 +335,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download x86_64 slice
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: macos-slice-x86_64
           path: build-mac-x86_64/appstage
 
       - name: Download arm64 slice
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: macos-slice-arm64
           path: build-mac-arm64/appstage
@@ -405,14 +414,17 @@ jobs:
 
       - name: Upload the boot screenshot
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vnc-smoke-macos-universal
           path: vnc-smoke.png
+          # A single PNG: skip the zip so it can be viewed from the run page
+          # directly. "archive: false" allows one file only, which this is.
+          archive: false
           if-no-files-found: ignore
 
       - name: Upload macOS universal release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rpcemu-macos-universal
           path: |
@@ -428,7 +440,7 @@ jobs:
       contents: write
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: upload
 
