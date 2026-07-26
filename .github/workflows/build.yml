@@ -218,14 +218,13 @@ jobs:
           path: vnc-smoke.png
           if-no-files-found: ignore
 
-      - name: Upload Linux amd64 release
+      - name: Upload Windows amd64 release
         uses: actions/upload-artifact@v4
         with:
-          name: rpcemu-linux-amd64
+          name: rpcemu-windows-amd64
           path: |
-            releases/linux/amd64/
-            releases/linux/*.tar.gz
-            releases/linux/amd64/*.deb
+            releases/windows/amd64/
+            releases/windows/*.zip
           if-no-files-found: error
 
   macos-x86_64:
