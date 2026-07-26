@@ -173,6 +173,24 @@ static bool FileIsReadable(const char *path)
 	return true;
 }
 
+/* TEMPORARY PROBE - not for merge. Runs as a static initialiser, before main().
+   If this prints and main() does not, something during startup never returns. */
+namespace {
+struct RpcemuStartupProbe {
+	RpcemuStartupProbe()
+	{
+		fprintf(stderr, "RPCEMU-PROBE: static initialiser ran (before main)\n");
+		fflush(stderr);
+	}
+	~RpcemuStartupProbe()
+	{
+		fprintf(stderr, "RPCEMU-PROBE: static destructor ran (process exiting)\n");
+		fflush(stderr);
+	}
+};
+RpcemuStartupProbe g_rpcemu_startup_probe;
+} // namespace
+
 /*
  * No wxIMPLEMENT_APP here: we provide our own main() so that headless mode can
  * run without ever constructing a wxApp (and therefore without gtk_init() and a

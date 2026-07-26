@@ -454,15 +454,35 @@ jobs:
           fi
 
           echo
-          echo "=== 7. lldb: does a breakpoint on main resolve, and is it hit? ==="
-          printf 'breakpoint set -n main\nrun --help\nbt\nquit\n' > lldb.cmds
-          # Bounded: if it never stops, the run would otherwise sit here.
-          ( lldb -b -s lldb.cmds "$exe" > lldb.out 2>&1 ) &
+          echo "=== 7. plain run: which probes print, and in what order? ==="
+          # The static initialiser runs before main(). If it prints and main()
+          # does not, something between them never returns.
+          "$exe" --help > plain.txt 2>&1 &
           pid=$!
-          for i in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          for i in $(seq 1 12); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
           kill -9 "$pid" 2>/dev/null || true
           wait "$pid" 2>/dev/null || true
-          cat lldb.out || echo "(no lldb output; lldb may not be installed)"
+          echo "--- output ---"
+          grep -E 'RPCEMU-PROBE|Usage:' plain.txt || echo "(no probe output at all)"
+
+          echo
+          echo "=== 8. lldb: breakpoint on main, and where it actually stops ==="
+          # Only stop at main and report the backtrace; do not let it continue
+          # into the GUI. "-o" commands run in order and lldb exits after them,
+          # so the earlier watchdog cutting the session short cannot recur.
+          lldb -b \
+            -o 'breakpoint set -n main' \
+            -o 'process launch --stop-at-entry -- --help' \
+            -o 'thread backtrace' \
+            -o 'continue' \
+            -o 'thread backtrace' \
+            -o 'quit' \
+            "$exe" > lldb.out 2>&1 &
+          pid=$!
+          for i in $(seq 1 90); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          kill -9 "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          sed -n '1,60p' lldb.out || echo "(no lldb output)"
 
       - name: Command-line smoke test (informational)
         timeout-minutes: 3
