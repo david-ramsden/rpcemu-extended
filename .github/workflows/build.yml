@@ -426,6 +426,59 @@ jobs:
           exe=releases/macos/RPCEmu.app/Contents/MacOS/rpcemu
           slice=build-mac-arm64/appstage/bin/rpcemu
 
+          echo "=== -1. is the bundled binary the one we just built? ==="
+          # The bundle is fused with lipo from two downloaded artifacts. If an
+          # artifact were stale, the .app could contain a binary built before
+          # the probe existed - which would explain every silent run without
+          # anything being wrong at startup at all.
+          ls -la "$exe" "$slice" 2>/dev/null || true
+          echo "  bundled:  $(shasum -a 256 "$exe" 2>/dev/null | cut -d" " -f1)"
+          echo "  arm64 in: $(shasum -a 256 "$slice" 2>/dev/null | cut -d" " -f1)"
+          echo "  probe in the staged arm64 slice: $(strings -a "$slice" 2>/dev/null | grep -c 'RPCEMU-PROBE') occurrence(s)"
+          echo "  probe in the bundled binary:     $(strings -a "$exe" 2>/dev/null | grep -c 'RPCEMU-PROBE') occurrence(s)"
+
+          echo
+          echo "=== 0. PER-SLICE: which slice runs, and does each contain the probe? ==="
+          # nm/strings without -arch inspect one slice only, so every earlier
+          # check described whichever slice the tool picked - not necessarily
+          # the one macOS executes. A universal binary has an LC_MAIN per
+          # slice, and these two differ, so they must be examined separately.
+          echo "--- architectures present ---"
+          lipo -archs "$exe"
+          for a in $(lipo -archs "$exe"); do
+            echo "--- slice: $a ---"
+            echo "  _main:"
+            nm -arch "$a" "$exe" 2>/dev/null | grep -E ' T _main$' | sed 's/^/    /' || echo "    (no _main)"
+            echo "  LC_MAIN entryoff:"
+            otool -arch "$a" -l "$exe" 2>/dev/null | grep -A 2 'cmd LC_MAIN' | grep entryoff | sed 's/^/    /'
+            echo "  probe string present:"
+            if lipo -thin "$a" "$exe" -output "/tmp/slice-$a" 2>/dev/null; then
+              if strings -a "/tmp/slice-$a" 2>/dev/null | grep -q 'RPCEMU-PROBE'; then
+                echo "    YES - this slice contains the probe"
+              else
+                echo "    NO - this slice does NOT contain the probe"
+              fi
+              rm -f "/tmp/slice-$a"
+            else
+              echo "    (could not extract slice)"
+            fi
+            echo "  run this slice directly:"
+            rm -f /tmp/rpcemu-probe.log
+            arch -"$a" "$exe" --help > "slice-$a.txt" 2>&1 &
+            pid=$!
+            for i in $(seq 1 10); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+            kill -9 "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            if [ -s /tmp/rpcemu-probe.log ]; then
+              echo "    OUR CODE RAN:"
+              sed 's/^/      /' /tmp/rpcemu-probe.log
+            else
+              echo "    our code did NOT run on this slice"
+            fi
+            grep -E 'Usage:' "slice-$a.txt" >/dev/null 2>&1 && echo "    (and it printed usage)"
+          done
+
+          echo
           echo "=== 1. is there a _main symbol, and is it ours? ==="
           nm -m "$exe" 2>&1 | grep -E ' _main$| _main ' || echo "(no _main in nm -m output)"
 
