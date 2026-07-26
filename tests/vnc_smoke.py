@@ -20,7 +20,7 @@ about, not two.
 
 Usage:
   vnc_smoke.py --binary <path> [--machine Default] [--port 5900]
-               [--boot-timeout 60] [--settle 15] [--save shot.png]
+               [--boot-timeout 60] [--settle 20] [--save shot.png]
 
 Exit status is 0 when the machine booted and drew to the screen, and 1
 otherwise, with the reason on stderr.
@@ -287,7 +287,7 @@ def main() -> int:
                     help="seconds to wait for the VNC server to come up "
                          "(it listens about a second in, so this is slack for a "
                          "loaded runner, not an expected wait)")
-    ap.add_argument("--settle", type=float, default=15.0,
+    ap.add_argument("--settle", type=float, default=20.0,
                     help="seconds to let RISC OS reach the desktop after VNC "
                          "accepts (a boot takes about ten)")
     ap.add_argument("--datadir",
