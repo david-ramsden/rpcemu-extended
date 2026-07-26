@@ -599,6 +599,28 @@ if [ "$DO_FUSE" = true ]; then
 		[ -f "$FRAMEWORKSD/$base" ] && continue
 		mkdir -p "$FRAMEWORKSD"
 		if [ -f "$X86_STAGE/libs/$base" ] && [ -f "$ARM_STAGE/libs/$base" ]; then
+			# Same basename in both slices is not proof they are the same
+			# library: each slice resolved its own Homebrew prefix, and a
+			# machine with, say, /opt/local alongside could stage a different
+			# libfoo for each. Comparing the files is no use - thin slices for
+			# different architectures always differ - so compare where they
+			# came from, which the per-slice maps record. Anything below the
+			# slice's own prefix is expected to differ only in that prefix.
+			x86_src=$(awk -F'\t' -v b="$base" '$1 == b { print $2; exit }' "$X86_DIR/appstage-deps.map" 2>/dev/null)
+			arm_src=$(awk -F'\t' -v b="$base" '$1 == b { print $2; exit }' "$ARM_DIR/appstage-deps.map" 2>/dev/null)
+			# Strip each slice's expected Homebrew prefix. What remains should
+			# be the same path under both - "Cellar/webp/1.6.0/lib/libwebp.7.dylib"
+			# and so on. If the tails differ, these are different libraries that
+			# happen to share a name.
+			x86_tail=${x86_src#/usr/local/}
+			arm_tail=${arm_src#/opt/homebrew/}
+			if [ -n "$x86_src" ] && [ -n "$arm_src" ] && [ "$x86_tail" != "$arm_tail" ]; then
+				echo "   ! $base is a different library in each slice:"
+				echo "       x86_64: $x86_src"
+				echo "       arm64:  $arm_src"
+				echo "     refusing to fuse them into one Contents/Frameworks/$base"
+				exit 1
+			fi
 			"$LIPO" -create "$X86_STAGE/libs/$base" "$ARM_STAGE/libs/$base" \
 				-output "$FRAMEWORKSD/$base"
 		else
@@ -691,6 +713,15 @@ EOF
 					;;
 				/opt/homebrew/*|/usr/local/*)
 					echo "   ! $(basename "$obj") still references $dep - it will not resolve elsewhere"
+					echo BAD >> "$CONTENTS/.deps.fail"
+					;;
+				@rpath/*|@loader_path/*)
+					# Everything non-system is meant to live in Frameworks under
+					# an @executable_path reference. One of these means a
+					# dependency was missed by the rewrite, and whether it
+					# resolves then depends on the LC_RPATH entries the library
+					# happens to carry - which is not something to ship on.
+					echo "   ! $(basename "$obj") still references $dep - it should point into Frameworks"
 					echo BAD >> "$CONTENTS/.deps.fail"
 					;;
 			esac
