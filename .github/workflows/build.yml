@@ -423,6 +423,11 @@ jobs:
       # constructor survived into __mod_init_func at all.
       - name: PROBE - image identity and constructor presence
         timeout-minutes: 8
+        # Diagnostic only: never let one failing command hide the checks after
+        # it. The previous run died in the UUID sweep and never reached the
+        # initializer and dyld checks, which are the point of the exercise.
+        continue-on-error: true
+        shell: bash +e {0}
         run: |
           exe=releases/macos/RPCEmu.app/Contents/MacOS/rpcemu
           slice=build-mac-arm64/appstage/bin/rpcemu
@@ -448,10 +453,15 @@ jobs:
           echo "--- fused and bundled (what we inspect, and what we run) ---"
           dwarfdump --uuid "$exe" 2>&1 || true
           echo "--- any other Mach-O in the bundle? ---"
+          # "|| true" throughout: the last command of this loop is a test that
+          # fails for every non-Mach-O file, and the step runs under bash -e.
           find releases/macos/RPCEmu.app -type f -perm +111 2>/dev/null \
             | while read -r f; do
-                file "$f" | grep -q Mach-O && echo "  $f" && dwarfdump --uuid "$f" 2>&1 | sed 's/^/    /'
-              done
+                if file "$f" 2>/dev/null | grep -q Mach-O; then
+                  echo "  $f"
+                  dwarfdump --uuid "$f" 2>&1 | sed 's/^/    /'
+                fi
+              done || true
 
           echo
           echo "=== C. does the constructor survive into __mod_init_func? ==="
