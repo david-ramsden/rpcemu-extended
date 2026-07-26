@@ -41,9 +41,10 @@ jobs:
       # at "the binary starts and parses its arguments"; this drives a full boot
       # over the built-in VNC server, so a break in the CPU, memory, VIDC, ROM
       # loading or the VNC server itself shows up here rather than in a user's
-      # first run. The screen check is deliberately loose - it asks whether the
-      # framebuffer looks like a drawn desktop, not whether it matches a
-      # reference image, so a cosmetic RISC OS change does not fail the build.
+      # first run. A fresh machine stops at a Supervisor prompt rather than the
+      # desktop (the shipped HostFS holds only the HardDisc4 installer, which
+      # has to be run from RISC OS), so the check asks whether the guest drew
+      # anything at all - not whether it matches a reference image.
       - name: Headless boot and VNC screenshot
         timeout-minutes: 10
         run: |
@@ -99,9 +100,10 @@ jobs:
       # at "the binary starts and parses its arguments"; this drives a full boot
       # over the built-in VNC server, so a break in the CPU, memory, VIDC, ROM
       # loading or the VNC server itself shows up here rather than in a user's
-      # first run. The screen check is deliberately loose - it asks whether the
-      # framebuffer looks like a drawn desktop, not whether it matches a
-      # reference image, so a cosmetic RISC OS change does not fail the build.
+      # first run. A fresh machine stops at a Supervisor prompt rather than the
+      # desktop (the shipped HostFS holds only the HardDisc4 installer, which
+      # has to be run from RISC OS), so the check asks whether the guest drew
+      # anything at all - not whether it matches a reference image.
       - name: Headless boot and VNC screenshot
         timeout-minutes: 10
         run: |

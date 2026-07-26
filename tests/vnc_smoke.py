@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-Boot a machine headlessly and check that RISC OS actually reaches a desktop.
+Boot a machine headlessly and check that RISC OS actually got going.
 
 Everything else in CI stops at "the binary starts and parses its arguments".
 This drives a real boot instead: it starts the emulator with --headless, waits
 for the built-in VNC server to accept a connection, captures the framebuffer
-over RFB, and checks the result looks like a booted machine rather than a blank
-or frozen screen. That exercises the CPU, memory, VIDC, ROM loading and the VNC
+over RFB, and checks the guest drew something rather than leaving a blank or
+frozen screen. That exercises the CPU, memory, VIDC, ROM loading and the VNC
 server end to end, on whichever platform the job runs.
+
+Note a fresh machine reaches a Supervisor prompt, not the desktop: the shipped
+machines/<name>/hostfs/ holds only the HardDisc4 installer, which has to be run
+from inside RISC OS to produce a !Boot. The check accounts for that - see
+describe_screen().
 
 The RFB handling mirrors tools/mcp/rpcemu_mcp.py (RFB 3.3, security None, Raw
 encoding, 32bpp true colour) so there is one protocol implementation to reason
@@ -15,9 +20,9 @@ about, not two.
 
 Usage:
   vnc_smoke.py --binary <path> [--machine Default] [--port 5900]
-               [--boot-timeout 180] [--save shot.png]
+               [--boot-timeout 90] [--settle 30] [--save shot.png]
 
-Exit status is 0 when the machine booted and the screen looked plausible, and 1
+Exit status is 0 when the machine booted and drew to the screen, and 1
 otherwise, with the reason on stderr.
 """
 
@@ -148,15 +153,27 @@ def encode_png(w: int, h: int, fb: bytearray) -> bytes:
 
 def describe_screen(w: int, h: int, fb: bytearray) -> tuple[bool, str]:
     """
-    Decide whether this looks like a booted desktop.
+    Decide whether the guest drew anything.
 
-    Deliberately loose: asserting on exact pixels would break on any cosmetic
-    change to RISC OS, the ROM or the mode. A booted desktop has a background,
-    an icon bar and window furniture, so it has many distinct colours spread
-    over the screen. A machine that never got going gives a uniform screen (all
-    black, or one flat colour).
+    A fresh machine has no !Boot: machines/<name>/hostfs/ ships only the
+    HardDisc4 installer, which has to be run from RISC OS, so the guest stops
+    at a Supervisor prompt - white text on black, and nothing else. Asking for
+    a colourful desktop would fail every healthy boot.
+
+    So the question is only "did the guest render text", which separates a
+    working boot from a black or frozen screen. It stays true if a machine is
+    later given a !Boot and reaches the desktop, since that draws far more.
+
+    Deliberately loose: no reference image, so a cosmetic RISC OS, ROM or mode
+    change cannot fail the build.
     """
-    step = max(1, (w * h) // 20000)  # sample ~20k pixels, enough to judge
+    if w == 0 or h == 0:
+        return False, "empty framebuffer"
+
+    # Count how much of the screen differs from the most common colour. Text on
+    # a plain background lights up a small but far from negligible fraction;
+    # a blank or frozen screen lights up almost none.
+    step = max(1, (w * h) // 40000)
     colours: dict[tuple[int, int, int], int] = {}
     total = 0
     for i in range(0, w * h, step):
@@ -167,19 +184,22 @@ def describe_screen(w: int, h: int, fb: bytearray) -> tuple[bool, str]:
     if total == 0:
         return False, "no pixels sampled"
 
-    distinct = len(colours)
-    top_px, top_n = max(colours.items(), key=lambda kv: kv[1])
-    dominant = top_n / total
+    bg_px, bg_n = max(colours.items(), key=lambda kv: kv[1])
+    foreground = 1.0 - (bg_n / total)
 
     summary = (
-        f"{w}x{h}, {distinct} distinct colours in {total} sampled pixels, "
-        f"most common {top_px} covering {dominant:.1%}"
+        f"{w}x{h}, {len(colours)} distinct colours in {total} sampled pixels, "
+        f"background {bg_px} covering {bg_n / total:.1%}, "
+        f"foreground {foreground:.2%}"
     )
 
-    if distinct < 8:
-        return False, f"screen looks blank or unrendered ({summary})"
-    if dominant > 0.995:
-        return False, f"screen is essentially one colour ({summary})"
+    # A Supervisor prompt is a handful of text lines on an otherwise empty
+    # screen, so the bar has to be low - but a screen that never drew anything
+    # is uniform to many decimal places, so there is a wide gap between them.
+    if len(colours) < 2:
+        return False, f"screen is a single flat colour, nothing was drawn ({summary})"
+    if foreground < 0.0005:
+        return False, f"screen is effectively blank, the guest drew almost nothing ({summary})"
     return True, summary
 
 
@@ -232,9 +252,9 @@ def main() -> int:
     ap.add_argument("--machine", default="Default", help="machine config name")
     ap.add_argument("--port", type=int, default=5900, help="VNC port to use")
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--boot-timeout", type=float, default=180.0,
+    ap.add_argument("--boot-timeout", type=float, default=90.0,
                     help="seconds to wait for the VNC server to come up")
-    ap.add_argument("--settle", type=float, default=25.0,
+    ap.add_argument("--settle", type=float, default=30.0,
                     help="seconds to let RISC OS finish drawing after VNC accepts")
     ap.add_argument("--save", help="write the captured screen here as a PNG")
     args = ap.parse_args()
