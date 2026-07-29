@@ -102,7 +102,10 @@ main(int argc, char **argv)
 	       HDR_TABLE, HDR_SWIBASE, HDR_SWIHANDLER, HDR_SWITABLE, HDR_SWICODE,
 	       HDR_MESSAGES, HDR_FLAGS, HDR_WORDS };
 	const char *path = (argc > 1) ? argv[1] : "gfxroms/RPCEmuGfx,ffa";
-	const char *str;
+	/* string_at() only assigns on success, and check() carries on after a
+	   failure, so a later check that reads str would otherwise use an
+	   indeterminate pointer. NULL makes the str != NULL guards below real. */
+	const char *str = NULL;
 	unsigned commands = 0;
 	size_t off;
 	FILE *f;
