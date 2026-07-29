@@ -238,7 +238,6 @@ void PackageDialog::RefreshCatalogue(bool force)
 void PackageDialog::Populate()
 {
 	const wxString filter = search_->GetValue().Lower();
-	int unsuitable = 0;
 
 	list_->DeleteAllItems();
 	shown_.clear();
@@ -247,7 +246,6 @@ void PackageDialog::Populate()
 		const PackageRecord &pkg = catalogue_[i];
 
 		if (!pkg.RunsHere()) {
-			unsuitable++;
 			continue;
 		}
 		if (!filter.empty() && !pkg.name.Lower().Contains(filter) &&

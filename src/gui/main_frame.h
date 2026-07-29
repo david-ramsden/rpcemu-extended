@@ -157,7 +157,10 @@ public:
 	void ResetForSignal();
 
 	bool IsWindowActive() const { return window_active_; }
-	bool IsFullScreen() const { return full_screen_; }
+	/* wxTopLevelWindow::IsFullScreen() is virtual, so this overrides it rather
+	   than shadowing it: wx's own callers see this flag too. It is set beside
+	   every ShowFullScreen() call, so the two agree. */
+	bool IsFullScreen() const override { return full_screen_; }
 
 	bool IsGuiThread() const override;
 	void PostVideoUpdate(VideoUpdate update) override;

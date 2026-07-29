@@ -408,10 +408,11 @@ void ConfigSelectorDialog::OnEdit(wxCommandEvent &)
 		return;
 	}
 
-	wxString config_path = path;
 	if (dlg.WasRenamed()) {
 		const wxString old_name = config_entries_[static_cast<size_t>(config_list_->GetSelection())].display_name;
-		config_path = ConfigPathsRenameMachine(old_name, dlg.GetNewName(), path);
+		/* Renames the files; the new path is not needed here, as the list is
+		   rebuilt from disc below. */
+		ConfigPathsRenameMachine(old_name, dlg.GetNewName(), path);
 	}
 
 	RefreshConfigList();
