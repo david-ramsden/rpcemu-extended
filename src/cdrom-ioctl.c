@@ -20,6 +20,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <linux/cdrom.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -53,7 +54,24 @@ static void ioctl_readsector(uint8_t *b, int sector)
 	}
 
         lseek(cdrom,sector*2048,SEEK_SET);
-        read(cdrom,b,2048);
+	/* read(2) may return a short count on a device as well as at the end of
+	   the media, so loop, and blank whatever is left: the caller passes all
+	   2048 bytes to the guest regardless of what arrived. */
+	{
+		size_t done = 0;
+
+		while (done < 2048) {
+			const ssize_t n = read(cdrom, b + done, 2048 - done);
+
+			if (n <= 0) {
+				break;
+			}
+			done += (size_t) n;
+		}
+		if (done < 2048) {
+			memset(b + done, 0, 2048 - done);
+		}
+	}
 	close(cdrom);
 }
 

@@ -132,3 +132,14 @@ add_executable(test_unzip test_unzip.c
                ${CMAKE_CURRENT_SOURCE_DIR}/../src/unzip.c)
 target_include_directories(test_unzip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 add_test(NAME test_unzip COMMAND test_unzip)
+
+# A track the image does not contain must read as blank rather than as the last
+# track read. adf_writeback() writes the whole track buffer back when the guest
+# changes one sector, so stale bytes there would be committed to the user's
+# image. Compiles disc_adf.c directly and stubs the FDC, as the tests above do,
+# and defines RPCEMU_DISC_TEST for the accessor that reads the track buffer.
+add_executable(test_disc_short_read test_disc_short_read.c
+               ${CMAKE_CURRENT_SOURCE_DIR}/../src/disc_adf.c)
+target_include_directories(test_disc_short_read PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_compile_definitions(test_disc_short_read PRIVATE RPCEMU_DISC_TEST)
+add_test(NAME test_disc_short_read COMMAND test_disc_short_read)

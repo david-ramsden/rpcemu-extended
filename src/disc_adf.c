@@ -117,21 +117,44 @@ static void adf_close(int drive)
 	adf[drive].f = NULL;
 }
 
+/*
+ * Read one track into buf, zero-filling whatever the image does not supply.
+ *
+ * Seeking past the end of a short image is normal rather than an error:
+ * adf_load() derives maxsector from the file size, so an image that stops
+ * early is tolerated by design. What must not happen is the buffer keeping the
+ * previous track's contents, because adf_writeback() writes the whole buffer
+ * back when the guest changes a single sector - committing another track's
+ * bytes to the image. Zero-filling makes the unread part read as blank, which
+ * is what an absent track should look like, and keeps writeback harmless.
+ */
+static void adf_read_track(int drive, uint8_t *buf, size_t len)
+{
+	const size_t got = fread(buf, 1, len, adf[drive].f);
+
+	if (got < len) {
+		memset(buf + got, 0, len - got);
+	}
+}
+
 static void adf_seek(int drive, int track)
 {
+	size_t track_bytes;
+
 	if (!adf[drive].f)
 		return;
 //        rpclog("Seek %i %i\n", drive, track);
 	if (adf[drive].dblstep)
 		track /= 2;
 	adf[drive].track = track;
+	track_bytes = (size_t) adf[drive].sectors * (size_t) adf[drive].size;
 	if (adf[drive].dblside) {
 		fseek(adf[drive].f, track * adf[drive].sectors * adf[drive].size * 2, SEEK_SET);
-		fread(adf[drive].track_data[0], adf[drive].sectors * adf[drive].size, 1, adf[drive].f);
-		fread(adf[drive].track_data[1], adf[drive].sectors * adf[drive].size, 1, adf[drive].f);
+		adf_read_track(drive, adf[drive].track_data[0], track_bytes);
+		adf_read_track(drive, adf[drive].track_data[1], track_bytes);
 	} else {
 		fseek(adf[drive].f, track * adf[drive].sectors * adf[drive].size, SEEK_SET);
-		fread(adf[drive].track_data[0], adf[drive].sectors * adf[drive].size, 1, adf[drive].f);
+		adf_read_track(drive, adf[drive].track_data[0], track_bytes);
 	}
 }
 
@@ -404,3 +427,12 @@ adf_loadstate(FILE *f)
 	adf_state.pause = savestate_read_i32(f);
 	adf_state.index = savestate_read_i32(f);
 }
+
+#ifdef RPCEMU_DISC_TEST
+/* See disc_adf.h: lets the short-read test inspect what a seek left in the
+   track buffer, which is otherwise private to this file. */
+const uint8_t *adf_test_track_data(int drive, int side)
+{
+	return adf[drive].track_data[side];
+}
+#endif

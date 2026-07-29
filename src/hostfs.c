@@ -1127,7 +1127,18 @@ hostfs_getbytes(ARMul_State *state)
 
   fseek(f, (long) state->Reg[4], SEEK_SET);
 
-  fread(buffer, 1, state->Reg[3], f);
+  {
+    /* Reading past the end of the file is not an error here - the loop below
+       hands the guest Reg[3] bytes either way. The buffer is realloc()ed and
+       reused across calls, though, so without this the guest would be given
+       whatever the last file left behind rather than the short read it asked
+       for. Zero-fill so the tail reads as empty. */
+    const size_t got = fread(buffer, 1, state->Reg[3], f);
+
+    if (got < state->Reg[3]) {
+      memset(buffer + got, 0, state->Reg[3] - got);
+    }
+  }
 
   for (i = 0; i < state->Reg[3]; i++) {
     ARMul_StoreByte(state, ptr++, buffer[i]);

@@ -21,6 +21,7 @@
 #define _LARGEFILE_SOURCE
 #define _LARGEFILE64_SOURCE
 #include <stdio.h>
+#include <string.h>
 #include "lfs-compat.h"
 #include "rpcemu.h"
 #include "ide.h"
@@ -46,9 +47,17 @@ static int iso_ready(void)
 
 static void iso_readsector(uint8_t *b, int sector)
 {
+        size_t got;
+
         if (iso_empty) return;
         fseeko64(iso_file, (off64_t) sector * 2048, SEEK_SET);
-        fread(b,2048,1,iso_file);
+        /* A sector past the end of the image reads as blank rather than as
+           whatever the last sector left in the buffer: the caller hands the
+           guest all 2048 bytes either way. */
+        got = fread(b, 1, 2048, iso_file);
+        if (got < 2048) {
+                memset(b + got, 0, 2048 - got);
+        }
 }
 
 static int iso_readtoc(unsigned char *b, unsigned char starttrack, int msf)
