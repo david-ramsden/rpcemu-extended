@@ -183,6 +183,10 @@ cmake_common_args() {
 	else
 		echo -DCMAKE_BUILD_TYPE=Release
 	fi
+	# This is the release script, so a build that quietly cannot reach a USB
+	# device is a broken release rather than a lesser one. Set
+	# RPCEMU_REQUIRE_LIBUSB=OFF in the environment to build without it anyway.
+	echo "-DRPCEMU_REQUIRE_LIBUSB=${RPCEMU_REQUIRE_LIBUSB:-ON}"
 	echo -DCMAKE_INSTALL_PREFIX=/usr
 }
 
@@ -196,6 +200,8 @@ stage_linux_release() {
 	# The graphics card driver, which lives in that card's own ROM rather
 	# than the general-purpose expansion card (see src/gfxcard.c).
 	[ -d gfxroms ] && cp -a gfxroms "$LINUX_RELEASE/" || true
+	# RISC OS's USB stack, in the USB card's ROM (see src/usbcard.c).
+	[ -d usbroms ] && cp -a usbroms "$LINUX_RELEASE/" || true
 	cp -a netroms "$LINUX_RELEASE/"
 	cp -a resources "$LINUX_RELEASE/"
 	cp -a roms "$LINUX_RELEASE/"
@@ -245,12 +251,21 @@ stage_linux_release() {
 	# Ship the full docs/ set so the README and MCP/HostCmd/debugger docs resolve.
 	[ -d docs ] && cp -a docs "$LINUX_RELEASE/" 2>/dev/null || true
 
+	# Whether USB passthrough is in this build, read from the binary rather than
+	# assumed: it is the one feature that silently disappears if a build host is
+	# missing a library, and "the USB dialogue is empty" is otherwise a puzzle.
+	local usb_state="no (built without libusb)"
+	if ldd "$release_binary" 2>/dev/null | grep -q "libusb-1.0"; then
+		usb_state="yes (libusb)"
+	fi
+
 	cat > "$LINUX_RELEASE/BUILDINFO.txt" <<EOF
 RPCEmu (Spork Edition) $VERSION
 Built: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 Host:  $(uname -s) $(uname -m)
 Binary: $binary_name
 Toolkit: wxWidgets + CMake (Linux)
+USB passthrough: $usb_state
 EOF
 }
 
@@ -321,6 +336,33 @@ build_podules() {
 			make clean
 			make AS=arm-linux-gnueabi-as LD=arm-linux-gnueabi-ld OBJCOPY=arm-linux-gnueabi-objcopy
 			cp -f syncclock,ffa "$SCRIPT_DIR/poduleroms/"
+		)
+	fi
+	# RPCEmuUSBSupport is the harness for the emulated USB host controller. Nothing
+	# in a stock guest touches that card, there being no USB stack in the IOMD ROM,
+	# so this module is how the emulation is exercised. See docs/usb.md.
+	local usb_dir="riscos-progs/RPCEmuUSBSupport"
+	if [ -d "$usb_dir" ]; then
+		echo "Building RPCEmuUSBSupport podule ROM..."
+		(
+			cd "$usb_dir"
+			make clean
+			make AS=arm-linux-gnueabi-as LD=arm-linux-gnueabi-ld OBJCOPY=arm-linux-gnueabi-objcopy
+			cp -f rpcemuusbsupport,ffa "$SCRIPT_DIR/poduleroms/"
+		)
+	fi
+	# RPCEmuPCIEmulator supplies the PCI SWIs that RISC OS's USB stack uses to
+	# get DMA-capable memory. It has to be in poduleroms/, not usbroms/: the
+	# support card's modules start before the USB card's, and OHCIDriver needs
+	# these SWIs during its own initialisation. See docs/usb.md.
+	local pci_dir="riscos-progs/RPCEmuPCIEmulator"
+	if [ -d "$pci_dir" ]; then
+		echo "Building RPCEmuPCIEmulator podule ROM..."
+		(
+			cd "$pci_dir"
+			make clean
+			make AS=arm-linux-gnueabi-as LD=arm-linux-gnueabi-ld OBJCOPY=arm-linux-gnueabi-objcopy
+			cp -f rpcemupciemulator,ffa "$SCRIPT_DIR/poduleroms/"
 		)
 	fi
 	echo "✓ Podule ROMs copied to poduleroms/"

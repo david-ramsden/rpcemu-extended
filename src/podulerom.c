@@ -255,6 +255,7 @@ initpodulerom(void)
 		makechunk(0x81, filebase, len); /* 8 = Mandatory, Acorn Operating System #0 (RISC OS), 1 = BBC ROM */
 		filebase += ((uint32_t) len + 3) & ~3u;
 	}
+
 }
 
 /**

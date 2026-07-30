@@ -14,6 +14,10 @@ option(RPCEMU_ENABLE_WARNINGS "Enable extra compiler warnings" ON)
 option(RPCEMU_ENABLE_GHOSTPDL "Enable in-process Ghostscript PDF conversion" ON)
 option(RPCEMU_ENABLE_VNC "Enable VNC server support (requires libvncserver)" ON)
 option(RPCEMU_BUILD_TESTS "Build unit tests (amd64 dynarec only)" ON)
+# Off by default so a casual build still works without libusb. Release builds
+# turn it on, so a platform losing USB passthrough fails the build rather than
+# shipping quietly without it.
+option(RPCEMU_REQUIRE_LIBUSB "Fail the build if libusb-1.0 is missing" OFF)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT WIN32 AND NOT APPLE)
     message(FATAL_ERROR "RPCEmu (Spork Edition) supports Linux, Windows (MinGW-w64), and macOS.")
@@ -57,6 +61,8 @@ install(DIRECTORY netroms/ DESTINATION share/rpcemu/netroms)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gfxroms)
     install(DIRECTORY gfxroms/ DESTINATION share/rpcemu/gfxroms)
 endif()
+# RISC OS's own USB stack, carried in the USB card's ROM for the same reason.
+install(DIRECTORY usbroms/ DESTINATION share/rpcemu/usbroms)
 install(DIRECTORY roms/ DESTINATION share/rpcemu/roms)
 # Expansion-card (podule) ROMs are shipped system components, read from the
 # shared resource dir; users select which podules to use per machine config.

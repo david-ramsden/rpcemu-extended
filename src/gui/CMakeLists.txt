@@ -18,8 +18,11 @@ set(GUI_SOURCES
     new_machine_dialog.cpp
     guest_command.cpp
     package_dialog.cpp
+    usb_dialog.cpp
     package_index.cpp
     package_install.cpp
+    package_sources.cpp
+    package_sources_dialog.cpp
     riscos_fetch.cpp
     riscos_setup_dialog.cpp
     podule_config_dialog.cpp

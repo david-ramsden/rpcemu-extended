@@ -82,6 +82,7 @@ cmake -B "$BUILD_DIR" -G "$GEN" \
 	-DCMAKE_BUILD_TYPE=Release \
 	"$DYNAREC_ARG" \
 	-DRPCEMU_BUILD_TESTS=ON \
+	"-DRPCEMU_REQUIRE_LIBUSB=${RPCEMU_REQUIRE_LIBUSB:-ON}" \
 	-DRPCEMU_ENABLE_GHOSTPDL=OFF
 cmake --build "$BUILD_DIR" -j"$(njobs)"
 
@@ -103,7 +104,7 @@ echo "==> Staging $WIN_RELEASE"
 rm -rf "$WIN_RELEASE"
 mkdir -p "$WIN_RELEASE"
 # Shared resources - identical set to the Linux release.
-for d in configs poduleroms netroms gfxroms resources roms podules default; do
+for d in configs poduleroms netroms gfxroms usbroms resources roms podules default; do
 	cp -a "$d" "$WIN_RELEASE/"
 done
 # Common HostFS "Shared" disc (shared across machines). Normally created on
