@@ -1145,6 +1145,8 @@ void MainFrame::OnClipboardTimer(wxTimerEvent &)
 		if (text == clipboard_last_seen_) {
 			return;
 		}
+		rpclog("Clipboard: host clipboard changed, %u characters, "
+		       "sending to the guest\n", (unsigned) text.length());
 		clipboard_last_seen_ = text;
 		clipboard_image_last_seen_.clear();
 		emulator_->HostClipboardChanged(CLIPBOARD_TYPE_TEXT,
@@ -1172,12 +1174,22 @@ void MainFrame::PostSetHostClipboard(const std::string &utf8)
 {
 	const wxString text = wxString::FromUTF8(utf8.c_str(), utf8.size());
 
+	rpclog("Clipboard: %u bytes on their way to the host clipboard\n",
+	       (unsigned) utf8.size());
+
 	CallAfter([this, text]() {
 		if (!wxTheClipboard->Open()) {
+			rpclog("Clipboard: could not open the host clipboard; the "
+			       "guest's text was dropped\n");
 			return;
 		}
-		wxTheClipboard->SetData(new wxTextDataObject(text));
+		const bool ok = wxTheClipboard->SetData(new wxTextDataObject(text));
+		const bool flushed = wxTheClipboard->Flush();
+
 		wxTheClipboard->Close();
+		rpclog("Clipboard: host clipboard set, %u characters, SetData %s, "
+		       "Flush %s\n", (unsigned) text.length(),
+		       ok ? "ok" : "FAILED", flushed ? "ok" : "no");
 		/* Ours now: do not read it straight back and send it to the guest
 		   again. */
 		clipboard_last_seen_ = text;
