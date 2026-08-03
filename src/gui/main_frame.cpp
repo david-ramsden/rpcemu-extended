@@ -1146,7 +1146,8 @@ void MainFrame::OnClipboardTimer(wxTimerEvent &)
 			return;
 		}
 		rpclog("Clipboard: host clipboard changed, %u characters, "
-		       "sending to the guest\n", (unsigned) text.length());
+		       "sending to the guest: '%.200s'\n",
+		       (unsigned) text.length(), (const char *) text.utf8_str());
 		clipboard_last_seen_ = text;
 		clipboard_image_last_seen_.clear();
 		emulator_->HostClipboardChanged(CLIPBOARD_TYPE_TEXT,
