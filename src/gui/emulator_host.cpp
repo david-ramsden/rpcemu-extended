@@ -389,6 +389,32 @@ extern "C" void fatal(const char *format, ...)
 	rpclog("FATAL: %s\n", buf);
 	fprintf(stderr, "RPCEmu fatal error: %s\n", buf);
 
+	/*
+	 * Where it was when it died.
+	 *
+	 * Deliberately reads nothing but scalars and arrays of fixed size, with
+	 * the one index that comes from a variable bounds-checked. `arm`,
+	 * `machine` and `models` are static objects, so all three exist from
+	 * program start - there is no count that could be wrong, no pointer
+	 * that could be stale and no allocation to fail. That matters here more
+	 * than anywhere: half these calls follow a failed malloc or arrive
+	 * before the machine has started, and a report that dies while being
+	 * written is worse than no report.
+	 *
+	 * Laid out as the data abort logger in arm_dynarec.c does it, so the
+	 * two read the same way in a log.
+	 */
+	rpclog("FATAL: PC=%08x mode=%u model=%s mem=%uMB event=%08x\n",
+	       arm.reg[15], (unsigned) arm.mode,
+	       machine.model < Model_MAX ? models[machine.model].name_config : "?",
+	       config.mem_size, (unsigned) arm.event);
+	rpclog("  regs r0-r7:  %08x %08x %08x %08x %08x %08x %08x %08x\n",
+	       arm.reg[0], arm.reg[1], arm.reg[2], arm.reg[3],
+	       arm.reg[4], arm.reg[5], arm.reg[6], arm.reg[7]);
+	rpclog("  regs r8-r15: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+	       arm.reg[8], arm.reg[9], arm.reg[10], arm.reg[11],
+	       arm.reg[12], arm.reg[13], arm.reg[14], arm.reg[15]);
+
 	/* Record the fatal before anything else so any GUI-thread wait/join can
 	   observe it and stop blocking on this (about to spin) thread. A cv.wait
 	   only re-evaluates its predicate when notified, so also wake every request
