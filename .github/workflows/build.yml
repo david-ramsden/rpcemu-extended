@@ -9,11 +9,11 @@
 #         |               only job that does either, so it goes first.
 #         v
 #   linux (amd64, arm64)   windows-amd64   macos-x86_64   macos-arm64
-#         |                                        |            |
-#         |                                        +-----+------+
-#         |                                              v
-#         |                                       macos-universal
-#         |                                              |
+#         |                      |                 |            |
+#         |                      |                 +-----+------+
+#         |                      |                       v
+#         |                      |                macos-universal
+#         |                      |                       |
 #         +----------------------+-----------------------+
 #                                v
 #                             release          tags only; publishes the assets
@@ -42,9 +42,10 @@ name: Build
 
 on:
   push:
-    branches: [main, "fix/*", "feat/*", "claude/*", "gui/*", "ci/*"]
+    branches: [main]
     tags: ["v*"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
