@@ -21,18 +21,22 @@
 #                                v
 #                             notify           pushes only; posts to Slack
 #
-# Two things to know before editing:
+# One thing to know before editing: a skipped job skips everything behind it, and
+# it travels the whole chain rather than stopping at the next job along.
+# release-preflight is skipped on every ref that is not a v* tag, so without help
+# it would skip the entire workflow on every branch and pull request.
 #
-#   - release-preflight is skipped on anything that is not a v* tag, and a
-#     skipped job would normally block everything behind it. sanitisers carries
-#     always() so it runs anyway, testing the result rather than the state.
-#     Anything else added between the two needs the same treatment.
+# The help is always(), and every job downstream of preflight needs it - not only
+# the one directly behind it. Each therefore reads
 #
-#   - the platform builds require sanitisers to have *succeeded*, so a failed
-#     preflight stops the run in seconds rather than after a full set of builds.
+#     if: always() && <what it actually requires>
 #
-# Adding a platform: gate it on sanitisers the way the others are, and add it to
-# the needs list of release and notify.
+# where always() only stops the inherited skip and the second half is the real
+# condition: preflight not having failed, or the job before having succeeded.
+# release is the exception, running on tags alone, where nothing upstream skips.
+#
+# Adding a platform: gate it on sanitisers the way the others are, always()
+# included, and add it to the needs list of release and notify.
 
 name: Build
 
@@ -247,7 +251,7 @@ jobs:
   # with two configurations rather than two jobs that have to be kept in step.
   linux:
     needs: sanitisers
-    if: needs.sanitisers.result == 'success'
+    if: always() && needs.sanitisers.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
       # One architecture failing should not cancel the other: which of them broke
@@ -387,7 +391,7 @@ jobs:
 
   windows-amd64:
     needs: sanitisers
-    if: needs.sanitisers.result == 'success'
+    if: always() && needs.sanitisers.result == 'success'
     # Native Windows build with MinGW-w64 via MSYS2 (MINGW64). Ships the
     # recompiler (full-speed dynarec; the JIT supports the Windows x64 ABI).
     # Uses build-windows.sh (build.sh is apt/.deb-only).
@@ -537,7 +541,7 @@ jobs:
 
   macos-x86_64:
     needs: sanitisers
-    if: needs.sanitisers.result == 'success'
+    if: always() && needs.sanitisers.result == 'success'
     # Free Intel (macos-13) runners are effectively unavailable, so build the
     # x86_64 slice (WITH the dynarec) on an Apple Silicon runner: Apple clang
     # cross-compiles to x86_64 natively via CMAKE_OSX_ARCHITECTURES, we just
@@ -598,7 +602,7 @@ jobs:
 
   macos-arm64:
     needs: sanitisers
-    if: needs.sanitisers.result == 'success'
+    if: always() && needs.sanitisers.result == 'success'
     # Apple Silicon runner: builds the arm64 slice. There is no ARM dynarec
     # backend, so arm64 uses the interpreter (RPCEMU_DYNAREC=OFF), mirroring the
     # Linux arm64 build. On Apple Silicon the x86_64 slice also runs via Rosetta.
@@ -638,6 +642,10 @@ jobs:
   macos-universal:
     # Fuse the two per-arch slices into a universal binary and stage the release.
     needs: [macos-x86_64, macos-arm64]
+    # Both slices must have succeeded - there is nothing to fuse otherwise - but
+    # always() is still needed, because a skip anywhere upstream reaches this job
+    # through them and would otherwise skip it whatever the slices did.
+    if: always() && needs.macos-x86_64.result == 'success' && needs.macos-arm64.result == 'success'
     runs-on: macos-14
     timeout-minutes: 20
     steps:
