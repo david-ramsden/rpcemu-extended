@@ -8,7 +8,7 @@
 #   sanitisers            builds under ASan/UBSan and runs the test suite. The
 #         |               only job that does either, so it goes first.
 #         v
-#   linux-amd64  linux-arm64  windows-amd64  macos-x86_64  macos-arm64
+#   linux (amd64, arm64)   windows-amd64   macos-x86_64   macos-arm64
 #         |                                        |            |
 #         |                                        +-----+------+
 #         |                                              v
@@ -240,13 +240,36 @@ jobs:
   # rather than not-failure: sanitisers is skipped only when preflight failed, and
   # a tag that cannot ship is not worth building. macos-universal needs no guard,
   # inheriting both through the slices it fuses.
-  linux-amd64:
+  #
+  # The two Linux builds differ only in where they run and what they produce:
+  # amd64 gets the recompiler, arm64 the interpreter, there being no ARM dynarec
+  # backend. Everything they do with the result is the same, so they are one job
+  # with two configurations rather than two jobs that have to be kept in step.
+  linux:
     needs: sanitisers
     if: needs.sanitisers.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One architecture failing should not cancel the other: which of them broke
+      # is the first thing worth knowing.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            variant: recompiler
+            build_flags: ""
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            variant: interpreter
+            build_flags: "--interpreter"
+    name: linux-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v7
         with:
+          # build.sh asks git whether this commit is a release tag, and calls the
+          # build a snapshot when it is not. Without the tags it would call a real
+          # release a snapshot too.
           fetch-tags: true
 
       - name: Install dependencies
@@ -255,35 +278,36 @@ jobs:
       # Piped through tee so the compiler's output can be examined afterwards.
       # pipefail so a failed build still fails the step rather than being masked
       # by tee's exit status.
-      - name: Build and package (amd64, dynarec)
+      - name: Build and package
         timeout-minutes: 5
         run: |
           set -o pipefail
           chmod +x build.sh setup-build-env.sh
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            ./build.sh --deb --zip 2>&1 | tee build.log
+            ./build.sh ${{ matrix.build_flags }} --deb --zip 2>&1 | tee build.log
           else
-            ./build.sh --zip 2>&1 | tee build.log
+            ./build.sh ${{ matrix.build_flags }} --zip 2>&1 | tee build.log
           fi
 
       # A warning in code this project maintains fails the build. Done here
       # rather than with -Werror in CMake, so that a new compiler release cannot
       # stop a user building from source - see the comment in the script.
-      # Only this job: it is the same C everywhere, and a full clean build is
-      # needed for the compiler to say anything at all about a file it would
-      # otherwise skip.
+      # amd64 only: it is the same C on both, and a full clean build is needed for
+      # the compiler to say anything at all about a file it would otherwise skip.
       - name: No new compiler warnings
+        if: matrix.arch == 'amd64'
         run: bash tests/check-warnings.sh build.log
 
       - name: Smoke test binary
         run: |
-          file releases/linux/amd64/rpcemu-recompiler | grep -i ELF
-          ls -la releases/linux/amd64/
+          binary="releases/linux/${{ matrix.arch }}/rpcemu-${{ matrix.variant }}"
+          file "$binary" | grep -i ELF
+          ls -la "releases/linux/${{ matrix.arch }}/"
           # Actually execute it. These paths run before any wxWidgets/GTK
           # initialisation, so they work with no display and catch a binary that
           # cannot start at all (bad link, missing library). The same script
           # runs on every platform, so the CLI is checked identically.
-          bash tests/cli_smoke.sh releases/linux/amd64/rpcemu-recompiler
+          bash tests/cli_smoke.sh "$binary"
 
       # Boot the machine for real and look at the screen. Everything above stops
       # at "the binary starts and parses its arguments"; this drives a full boot
@@ -310,7 +334,12 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ci-rom
-          key: rpcemu-rom-stable-v1
+          # Per architecture, because a cache entry cannot be written twice. On a
+          # cold cache both configurations run this at once, both download the
+          # ROM, and only the first to finish can save it - the other spends the
+          # time and then warns that it could not reserve the key. Separate keys
+          # cost one extra download the first time and nothing afterwards.
+          key: rpcemu-rom-stable-v1-${{ matrix.arch }}
       - name: Fetch a ROM for the boot test
         run: |
           set -eu
@@ -319,7 +348,7 @@ jobs:
           mkdir -p "$RPCEMU_DATADIR" ci-rom
           cp -r default configs "$RPCEMU_DATADIR/"
           if ! ls ci-rom/ROM* >/dev/null 2>&1; then
-            releases/linux/amd64/rpcemu-recompiler --fetch-riscos --no-disc --accept-licence
+            "releases/linux/${{ matrix.arch }}/rpcemu-${{ matrix.variant }}" --fetch-riscos --no-disc --accept-licence
             cp "$RPCEMU_DATADIR"/roms/ROM* ci-rom/
           fi
           mkdir -p "$RPCEMU_DATADIR/roms"
@@ -330,131 +359,30 @@ jobs:
         timeout-minutes: 3
         run: |
           python3 tests/boot_smoke.py \
-            --binary releases/linux/amd64/rpcemu-recompiler \
+            --binary "releases/linux/${{ matrix.arch }}/rpcemu-${{ matrix.variant }}" \
             --datadir "$RUNNER_TEMP/rpcemu-data" \
             --abort-check require \
-            --save vnc-smoke-linux-amd64.png
+            --save vnc-smoke-linux-${{ matrix.arch }}.png
 
       - name: Upload the boot screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: vnc-smoke-linux-amd64
-          path: vnc-smoke-linux-amd64.png
+          name: vnc-smoke-linux-${{ matrix.arch }}
+          path: vnc-smoke-linux-${{ matrix.arch }}.png
           # A single PNG: skip the zip so it can be viewed from the run page
           # directly. "archive: false" allows one file only, which this is.
           archive: false
           if-no-files-found: ignore
 
-      - name: Upload Linux amd64 release
+      - name: Upload Linux release
         uses: actions/upload-artifact@v7
         with:
-          name: rpcemu-linux-amd64
+          name: rpcemu-linux-${{ matrix.arch }}
           path: |
-            releases/linux/amd64/
+            releases/linux/${{ matrix.arch }}/
             releases/linux/*.tar.gz
-            releases/linux/amd64/*.deb
-          if-no-files-found: error
-
-  linux-arm64:
-    needs: sanitisers
-    if: needs.sanitisers.result == 'success'
-    # Native arm64 hosted runner (free for public repos). The ARM dynarec backend
-    # does not exist, so arm64 uses the interpreter (--interpreter).
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-tags: true
-
-      - name: Install dependencies
-        run: bash setup-build-env.sh
-
-      - name: Build and package (arm64, interpreter)
-        timeout-minutes: 5
-        run: |
-          chmod +x build.sh setup-build-env.sh
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            ./build.sh --interpreter --deb --zip
-          else
-            ./build.sh --interpreter --zip
-          fi
-
-      - name: Smoke test binary
-        run: |
-          file releases/linux/arm64/rpcemu-interpreter | grep -i ELF
-          ls -la releases/linux/arm64/
-          bash tests/cli_smoke.sh releases/linux/arm64/rpcemu-interpreter
-
-      # Boot the machine for real and look at the screen. Everything above stops
-      # at "the binary starts and parses its arguments"; this drives a full boot
-      # over the built-in VNC server, so a break in the CPU, memory, VIDC, ROM
-      # loading or the VNC server itself shows up here rather than in a user's
-      # first run. The test machine is seeded with a !Boot that runs Desktop, so
-      # a healthy run reaches the RISC OS desktop; the check asks whether the
-      # screen has a desktop's range of colour, not whether it matches a
-      # reference image, so cosmetic changes cannot fail the build.
-      # The boot test needs a ROM, and RPCEmu ships none - so fetch one the way a
-      # user now would, with the emulator's own downloader. That gives the boot
-      # test something to run and checks the download itself on every platform,
-      # which matters because each uses a different HTTP stack (libcurl here,
-      # WinHTTP on Windows, NSURLSession on macOS).
-      #
-      # Cached so RISC OS Open are not asked for the same file on every push.
-      # The ROM and the machine the test creates go in a data directory under
-      # RUNNER_TEMP, not in the staged release. The emulator resolves its
-      # writable data separately from its read-only resources, so RPCEMU_DATADIR
-      # moves every write out of the tree that is about to be uploaded while it
-      # still finds its resources beside the binary. The staged release is left
-      # exactly as it was built.
-      - name: Cache the RISC OS ROM
-        uses: actions/cache@v6
-        with:
-          path: ci-rom
-          key: rpcemu-rom-stable-v1
-      - name: Fetch a ROM for the boot test
-        run: |
-          set -eu
-          export RPCEMU_DATADIR="$RUNNER_TEMP/rpcemu-data"
-          export RPCEMU_NO_GUI_MESSAGES=1
-          mkdir -p "$RPCEMU_DATADIR" ci-rom
-          cp -r default configs "$RPCEMU_DATADIR/"
-          if ! ls ci-rom/ROM* >/dev/null 2>&1; then
-            releases/linux/arm64/rpcemu-interpreter --fetch-riscos --no-disc --accept-licence
-            cp "$RPCEMU_DATADIR"/roms/ROM* ci-rom/
-          fi
-          mkdir -p "$RPCEMU_DATADIR/roms"
-          cp ci-rom/ROM* "$RPCEMU_DATADIR/roms/"
-          ls -la "$RPCEMU_DATADIR/roms/"
-
-      - name: Headless boot smoke test
-        timeout-minutes: 3
-        run: |
-          python3 tests/boot_smoke.py \
-            --binary releases/linux/arm64/rpcemu-interpreter \
-            --datadir "$RUNNER_TEMP/rpcemu-data" \
-            --abort-check require \
-            --save vnc-smoke-linux-arm64.png
-
-      - name: Upload the boot screenshot
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: vnc-smoke-linux-arm64
-          path: vnc-smoke-linux-arm64.png
-          # A single PNG: skip the zip so it can be viewed from the run page
-          # directly. "archive: false" allows one file only, which this is.
-          archive: false
-          if-no-files-found: ignore
-
-      - name: Upload Linux arm64 release
-        uses: actions/upload-artifact@v7
-        with:
-          name: rpcemu-linux-arm64
-          path: |
-            releases/linux/arm64/
-            releases/linux/*.tar.gz
-            releases/linux/arm64/*.deb
+            releases/linux/${{ matrix.arch }}/*.deb
           if-no-files-found: error
 
   windows-amd64:
@@ -868,7 +796,7 @@ jobs:
     # whether the emulator's C is well defined rather than merely producing the
     # expected answer, and shipping past a report from it would mean shipping
     # something known to be relying on the compiler's goodwill.
-    needs: [release-preflight, linux-amd64, linux-arm64, windows-amd64, macos-universal, sanitisers]
+    needs: [release-preflight, linux, windows-amd64, macos-universal, sanitisers]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -910,7 +838,7 @@ jobs:
   # unreachable would be reporting on itself rather than on the emulator.
   notify:
     if: always() && github.event_name == 'push'
-    needs: [release-preflight, linux-amd64, linux-arm64, windows-amd64, macos-universal, sanitisers, release]
+    needs: [release-preflight, linux, windows-amd64, macos-universal, sanitisers, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
