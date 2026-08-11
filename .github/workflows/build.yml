@@ -1,8 +1,44 @@
+# Build, test and release RPCEmu Extended.
+#
+# The jobs form a chain of gates, each one earning the right to start the next:
+#
+#   release-preflight     tags only; does the tag match VERSION, and do its
+#         |               release notes exist? Skipped on every other ref.
+#         v
+#   sanitisers            builds under ASan/UBSan and runs the test suite. The
+#         |               only job that does either, so it goes first.
+#         v
+#   linux-amd64  linux-arm64  windows-amd64  macos-x86_64  macos-arm64
+#         |                                        |            |
+#         |                                        +-----+------+
+#         |                                              v
+#         |                                       macos-universal
+#         |                                              |
+#         +----------------------+-----------------------+
+#                                v
+#                             release          tags only; publishes the assets
+#                                |
+#                                v
+#                             notify           pushes only; posts to Slack
+#
+# Two things to know before editing:
+#
+#   - release-preflight is skipped on anything that is not a v* tag, and a
+#     skipped job would normally block everything behind it. sanitisers carries
+#     always() so it runs anyway, testing the result rather than the state.
+#     Anything else added between the two needs the same treatment.
+#
+#   - the platform builds require sanitisers to have *succeeded*, so a failed
+#     preflight stops the run in seconds rather than after a full set of builds.
+#
+# Adding a platform: gate it on sanitisers the way the others are, and add it to
+# the needs list of release and notify.
+
 name: Build
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, "fix/*", "feat/*", "claude/*", "gui/*", "ci/*"]
     tags: ["v*"]
   pull_request:
 
@@ -23,12 +59,15 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  # A release is named by its tag but the binaries carry what VERSION says, so
-  # the two disagreeing publishes a release whose contents claim to be something
-  # else. Checked before anything is built, so a mistyped tag costs seconds.
-  version-matches-tag:
+  # What a tag has to get right before anything is built: it agrees with VERSION,
+  # and its release notes exist. Disagreeing publishes a release whose contents
+  # claim to be something else; missing notes cannot be written afterwards.
+  #
+  # Tags only, so this is skipped on a branch or a pull request - and everything
+  # behind it treats that skip as permission to continue.
+  release-preflight:
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - uses: actions/checkout@v7
         with:
@@ -69,7 +108,13 @@ jobs:
           fi
           echo "found $notes ($(wc -l < "$notes") lines)"
 
+  # The platform builds wait on sanitisers, and through it on preflight. Success
+  # rather than not-failure: sanitisers is skipped only when preflight failed, and
+  # a tag that cannot ship is not worth building. macos-universal needs no guard,
+  # inheriting both through the slices it fuses.
   linux-amd64:
+    needs: sanitisers
+    if: needs.sanitisers.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -184,6 +229,8 @@ jobs:
           if-no-files-found: error
 
   linux-arm64:
+    needs: sanitisers
+    if: needs.sanitisers.result == 'success'
     # Native arm64 hosted runner (free for public repos). The ARM dynarec backend
     # does not exist, so arm64 uses the interpreter (--interpreter).
     runs-on: ubuntu-24.04-arm
@@ -283,6 +330,8 @@ jobs:
           if-no-files-found: error
 
   windows-amd64:
+    needs: sanitisers
+    if: needs.sanitisers.result == 'success'
     # Native Windows build with MinGW-w64 via MSYS2 (MINGW64). Ships the
     # recompiler (full-speed dynarec; the JIT supports the Windows x64 ABI).
     # Uses build-windows.sh (build.sh is apt/.deb-only).
@@ -442,7 +491,17 @@ jobs:
   # C on all three platforms, so a fault found here is a fault everywhere, but a
   # platform's own code (the Win32 and Cocoa paths) is not covered. Noted in
   # docs/testing.md rather than left to be discovered.
+  #
+  # Runs in front of the platform builds, which gate on it and so inherit the
+  # preflight checks through it. It is the only job running the test suite, so a
+  # failure here would otherwise have cost a runner per platform to learn the
+  # same thing.
   sanitisers:
+    needs: release-preflight
+    # A skipped dependency blocks the jobs behind it unless they say otherwise,
+    # and preflight is skipped on every ref that is not a tag. always() keeps this
+    # running there; the result test still stops it when preflight really failed.
+    if: always() && needs.release-preflight.result != 'failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -548,6 +607,8 @@ jobs:
           if-no-files-found: ignore
 
   macos-x86_64:
+    needs: sanitisers
+    if: needs.sanitisers.result == 'success'
     # Free Intel (macos-13) runners are effectively unavailable, so build the
     # x86_64 slice (WITH the dynarec) on an Apple Silicon runner: Apple clang
     # cross-compiles to x86_64 natively via CMAKE_OSX_ARCHITECTURES, we just
@@ -607,6 +668,8 @@ jobs:
           if-no-files-found: error
 
   macos-arm64:
+    needs: sanitisers
+    if: needs.sanitisers.result == 'success'
     # Apple Silicon runner: builds the arm64 slice. There is no ARM dynarec
     # backend, so arm64 uses the interpreter (RPCEMU_DYNAREC=OFF), mirroring the
     # Linux arm64 build. On Apple Silicon the x86_64 slice also runs via Rosetta.
@@ -804,12 +867,12 @@ jobs:
     # whether the emulator's C is well defined rather than merely producing the
     # expected answer, and shipping past a report from it would mean shipping
     # something known to be relying on the compiler's goodwill.
-    needs: [version-matches-tag, linux-amd64, linux-arm64, windows-amd64, macos-universal, sanitisers]
+    needs: [release-preflight, linux-amd64, linux-arm64, windows-amd64, macos-universal, sanitisers]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      # The notes are published from the file version-matches-tag insisted on, so
+      # The notes are published from the file release-preflight insisted on, so
       # the release reads correctly the moment it appears rather than being
       # rewritten by hand afterwards.
       - uses: actions/checkout@v7
@@ -846,7 +909,7 @@ jobs:
   # unreachable would be reporting on itself rather than on the emulator.
   notify:
     if: always() && github.event_name == 'push'
-    needs: [version-matches-tag, linux-amd64, linux-arm64, windows-amd64, macos-universal, sanitisers, release]
+    needs: [release-preflight, linux-amd64, linux-arm64, windows-amd64, macos-universal, sanitisers, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -860,8 +923,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # A job that did not run is not a job that failed: version-matches-tag
-          # and release are skipped on every push that is not a tag.
+          # A job that did not run is not a job that failed: release-preflight and
+          # release are skipped on every push that is not a tag, and a failed
+          # preflight skips everything behind it. Counting only failure reports
+          # that as the one tag problem it is rather than a wall of broken builds.
           failed=$(printf '%s' "$RESULTS" \
               | jq -r 'to_entries | map(select(.value.result == "failure") | .key) | join(", ")')
 
