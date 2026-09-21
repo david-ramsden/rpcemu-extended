@@ -112,6 +112,11 @@ echo "==> wxWidgets (wxMSW, static, bundled image/zlib/expat libs)"
 	--disable-tests --disable-precomp-headers &&
   make -j"$JOBS" && sudo make install )
 
+# wolfSSL and ngtcp2 give the Nexus Community Network its transport. Built by
+# their own script, which every platform calls, so the versions and wolfSSL's
+# rather particular build options live in one place rather than five.
+"${HERE}/build-quic-libs.sh" --prefix "$PREFIX" --toolchain "$TC" --jobs "$JOBS" --sudo
+
 echo
 echo "All cross dependencies installed into ${PREFIX}."
 echo "Now configure + build:"
