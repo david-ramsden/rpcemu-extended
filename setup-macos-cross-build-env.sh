@@ -122,6 +122,11 @@ build_deps_for_arch() {
 		make -j"$(nproc)"
 		make install
 	)
+
+	# wolfSSL + ngtcp2 (cmake, static) -------------------------------------
+	msg "[$arch] cross-building wolfSSL and ngtcp2"
+	"$SCRIPT_DIR/build-quic-libs.sh" --prefix "$prefix" \
+		--toolchain "$SCRIPT_DIR/cmake/osxcross-$arch.cmake" --jobs "$(nproc)"
 }
 
 build_deps_for_arch x86_64

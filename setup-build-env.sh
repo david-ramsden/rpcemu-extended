@@ -63,6 +63,11 @@ sudo apt $APT_RETRY install -y \
 	libusb-1.0-0-dev
 
 echo ""
+echo "Building wolfSSL and ngtcp2 for the Nexus Community Network..."
+"$(dirname "$0")/build-quic-libs.sh" --prefix /usr/local --sudo
+sudo ldconfig 2>/dev/null || true
+
+echo ""
 echo "✓ Linux build environment ready"
 echo ""
 echo "Build with:"

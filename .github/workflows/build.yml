@@ -689,6 +689,10 @@ jobs:
             mingw-w64-x86_64-libvncserver
             mingw-w64-x86_64-libusb
 
+      - name: Build wolfSSL and ngtcp2
+        timeout-minutes: 10
+        run: bash build-quic-libs.sh --prefix /mingw64
+
       - name: Build and stage release (native MSYS2, both binaries)
         timeout-minutes: 14
         run: |
@@ -861,6 +865,10 @@ jobs:
             mingw-w64-clang-aarch64-libvncserver
             mingw-w64-clang-aarch64-libusb
 
+      - name: Build wolfSSL and ngtcp2
+        timeout-minutes: 10
+        run: bash build-quic-libs.sh --prefix /clangarm64
+
       - name: Build and stage release (arm64, both binaries)
         timeout-minutes: 18
         run: |
@@ -1014,6 +1022,10 @@ jobs:
         timeout-minutes: 16
         run: bash .github/scripts/macos/macports-setup.sh 15-Sequoia
 
+      - name: Build wolfSSL and ngtcp2
+        timeout-minutes: 10
+        run: bash build-quic-libs.sh --prefix /opt/local --sudo
+
       - name: Build x86_64 slice (both binaries) + test
         timeout-minutes: 12
         run: |
@@ -1059,6 +1071,10 @@ jobs:
       - name: Install MacPorts and the dependencies
         timeout-minutes: 16
         run: bash .github/scripts/macos/macports-setup.sh 15-Sequoia
+
+      - name: Build wolfSSL and ngtcp2
+        timeout-minutes: 10
+        run: bash build-quic-libs.sh --prefix /opt/local --sudo
 
       - name: Build arm64 slice (both binaries) + test
         timeout-minutes: 12
