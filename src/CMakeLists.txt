@@ -92,6 +92,10 @@ set(RPCEMU_CORE_SOURCES
     net_json.c
     net_switch.c
     network-nat.c
+    # net_quic.c when RPCEMU_ENABLE_NEXUS is on, and this instead of it
+    # otherwise: the Nexus wire needs two libraries that have to be built from
+    # source, so a build has to be able to do without them.
+    $<$<NOT:$<BOOL:${RPCEMU_ENABLE_NEXUS}>>:net_quic_stub.c>
     broadcast_relay.c
     slirp/bootp.c
     slirp/cksum.c

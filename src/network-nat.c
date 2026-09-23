@@ -41,6 +41,7 @@
 #include "podules.h"
 #include "broadcast_relay.h"
 #include "net_json.h"
+#include "net_quic.h"
 #include "net_switch.h"
 
 #include "slirp/libslirp.h"
@@ -308,15 +309,15 @@ network_nat_init(void)
 	/*
 	 * The wire this machine is on, and there is only ever one.
 	 *
-	 * A JSON server (net_json.h) and the loopback hub (net_switch.h) are both
-	 * hubs that flood every frame. A machine on both would send each frame to
-	 * its local peers and to the server, which replicates it to those same
-	 * peers if they are connected too, and everything would arrive twice. So a
-	 * machine that names a server uses it, and the loopback wire stays off -
-	 * including while that server is unreachable and being retried, which is
-	 * why this asks whether one is configured rather than whether it answered.
+	 * A Nexus relay (net_quic.h), a JSON server (net_json.h) and the loopback
+	 * hub (net_switch.h) all carry every frame a machine sends to the machines
+	 * it shares a network with. A machine on two of them would send each frame
+	 * down both, and a peer on both would receive it twice. So the first one
+	 * that is configured wins, and the rest stay off - including while that one
+	 * is unreachable and being retried, which is why each asks whether it is
+	 * configured rather than whether it answered.
 	 */
-	if (net_json_init() != 0) {
+	if (net_quic_init() != 0 && net_json_init() != 0) {
 		net_switch_init();
 	}
 
@@ -344,14 +345,18 @@ network_nat_reset(void)
 }
 
 /**
- * Whichever wire this machine is on: a JSON server if it names one, the
- * loopback hub otherwise. Never both - see network_nat_init().
+ * Whichever wire this machine is on: a Nexus relay or a JSON server if it names
+ * one, the loopback hub otherwise. Never more than one - see
+ * network_nat_init().
  */
 static void
 poll_local_wire(void)
 {
-	/* Polled while disconnected too: that is what retries the server. */
-	if (net_json_wants_connection()) {
+	/* Polled while disconnected too: that is what retries the connection, and
+	   for Nexus it is also what services QUIC's timers. */
+	if (net_quic_wants_connection()) {
+		net_quic_poll();
+	} else if (net_json_wants_connection()) {
 		net_json_poll();
 	} else {
 		net_switch_poll();
@@ -530,10 +535,14 @@ network_nat_tx(uint32_t errbuf, uint32_t mbufs, uint32_t dest, uint32_t src, uin
 	 * arp_input() in slirp/slirp.c), so it does not answer for another guest
 	 * and cannot hijack a conversation between two of them.
 	 */
-	/* Dropped rather than sent to the loopback wire while the server is away:
-	   this machine is not on that wire, and the frame would reach machines
-	   that are not its peers. */
-	if (net_json_wants_connection()) {
+	/* Dropped rather than sent to the loopback wire while the relay or server
+	   is away: this machine is not on that wire, and the frame would reach
+	   machines that are not its peers. */
+	if (net_quic_wants_connection()) {
+		if (net_quic_is_connected()) {
+			net_quic_tx(nat.tx_buffer, packet_length);
+		}
+	} else if (net_json_wants_connection()) {
 		if (net_json_is_connected()) {
 			net_json_tx(nat.tx_buffer, packet_length);
 		}
@@ -711,6 +720,7 @@ network_nat_close(void)
 	broadcast_relay_close();
 	net_switch_close();
 	net_json_close();
+	net_quic_close();
 	net_slot_release();
 
 	// Note: SLiRP cleanup would go here if needed

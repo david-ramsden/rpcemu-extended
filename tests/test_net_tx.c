@@ -140,6 +140,12 @@ void net_json_tx(const uint8_t *frame, int frame_len) { (void) frame; (void) fra
 int  net_json_init(void) { return -1; }
 void net_json_close(void) { }
 int  net_json_poll(void) { return 0; }
+int  net_quic_is_connected(void) { return 0; }
+int  net_quic_wants_connection(void) { return 0; }
+void net_quic_tx(const uint8_t *frame, int frame_len) { (void) frame; (void) frame_len; }
+int  net_quic_init(void) { return -1; }
+void net_quic_close(void) { }
+int  net_quic_poll(void) { return 0; }
 int  net_switch_init(void) { return 0; }
 void net_switch_close(void) { }
 int  net_switch_poll(void) { return 0; }
