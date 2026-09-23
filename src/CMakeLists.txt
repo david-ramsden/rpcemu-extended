@@ -312,6 +312,36 @@ else()
     message(STATUS "USB passthrough: not available (no libusb-1.0)")
 endif()
 
+# The Nexus Community Network. Required rather than optional when the option is
+# on: nothing here degrades gracefully, and a build that quietly lacks the
+# network the user asked for is worse than one that stops.
+if(RPCEMU_ENABLE_NEXUS)
+    if(NOT PkgConfig_FOUND)
+        message(FATAL_ERROR "RPCEMU_ENABLE_NEXUS needs pkg-config to find ngtcp2.")
+    endif()
+    pkg_check_modules(NGTCP2 REQUIRED libngtcp2)
+    pkg_check_modules(NGTCP2_WOLFSSL REQUIRED libngtcp2_crypto_wolfssl)
+    pkg_check_modules(WOLFSSL REQUIRED wolfssl)
+
+    target_sources(rpcemu_core PRIVATE nexus_framing.c)
+    target_include_directories(rpcemu_core PRIVATE
+        ${NGTCP2_INCLUDE_DIRS} ${NGTCP2_WOLFSSL_INCLUDE_DIRS} ${WOLFSSL_INCLUDE_DIRS})
+    target_link_directories(rpcemu_core PUBLIC
+        ${NGTCP2_LIBRARY_DIRS} ${NGTCP2_WOLFSSL_LIBRARY_DIRS} ${WOLFSSL_LIBRARY_DIRS})
+    # The crypto shim before ngtcp2 before wolfSSL: these are static archives,
+    # and a static link resolves left to right.
+    target_link_libraries(rpcemu_core PUBLIC
+        ${NGTCP2_WOLFSSL_LIBRARIES} ${NGTCP2_LIBRARIES} ${WOLFSSL_LIBRARIES})
+    # wolfSSL's Diffie-Hellman uses pow() and log(), and its .pc file does not
+    # say so: without this the link fails on three symbols from dh.c. Not on
+    # Windows, where the maths functions are in the C runtime.
+    if(NOT WIN32)
+        target_link_libraries(rpcemu_core PUBLIC m)
+    endif()
+    target_compile_definitions(rpcemu_core PRIVATE RPCEMU_HAVE_NEXUS)
+    message(STATUS "Nexus: ngtcp2 ${NGTCP2_VERSION}, wolfSSL ${WOLFSSL_VERSION}")
+endif()
+
 # Expose the JIT test hooks (codegen_test_compile/_interp) for the differential
 # flag tester. amd64 dynarec only; releases can disable with RPCEMU_BUILD_TESTS=OFF.
 if(RPCEMU_BUILD_TESTS AND RPCEMU_DYNAREC AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|aarch64|arm64|ARM64")

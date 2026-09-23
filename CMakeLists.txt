@@ -74,6 +74,10 @@ endif()
 
 option(RPCEMU_ENABLE_VNC "Enable VNC server support (requires libvncserver)" ON)
 option(RPCEMU_BUILD_TESTS "Build unit tests (amd64 dynarec only)" ON)
+# Off until the client is finished. build-quic-libs.sh installs what this needs;
+# no package manager ships ngtcp2 with the wolfSSL crypto backend, so the
+# libraries are never already there.
+option(RPCEMU_ENABLE_NEXUS "Enable the Nexus Community Network (requires ngtcp2 + wolfSSL)" OFF)
 # Off by default so a casual build still works without libusb. Release builds
 # turn it on, so a platform losing USB passthrough fails the build rather than
 # shipping quietly without it.
