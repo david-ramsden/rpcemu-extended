@@ -971,6 +971,12 @@ rpcemu_add_test(test_machine_lock ${CMAKE_CURRENT_BINARY_DIR})
 # The JSON wire format, which is somebody else's
 # format: if we disagree with it there is nobody on our side to notice. Compiles
 # net_json.c directly with stubs for the emulator it would otherwise reach.
+add_executable(test_nexus_framing test_nexus_framing.c
+               ${CMAKE_CURRENT_SOURCE_DIR}/../src/nexus_framing.c)
+target_include_directories(test_nexus_framing PRIVATE
+                           ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+rpcemu_add_test(test_nexus_framing)
+
 add_executable(test_net_json test_net_json.c
                ${CMAKE_CURRENT_SOURCE_DIR}/../src/net_json.c
                ${CMAKE_CURRENT_SOURCE_DIR}/../src/net_switch.c
@@ -1127,7 +1133,7 @@ rpcemu_add_test(test_unzip)
 #
 # Raise RPCEMU_EXPECTED_TESTS when adding a test. If that feels like a chore, it
 # is the only line in the file that cannot go stale without being noticed.
-set(RPCEMU_EXPECTED_TESTS 70)	# tests that build on every platform
+set(RPCEMU_EXPECTED_TESTS 71)	# tests that build on every platform
 if(RPCEMU_JIT_TESTS)
     math(EXPR RPCEMU_EXPECTED_TESTS "${RPCEMU_EXPECTED_TESTS} + 10")	# JIT differential
 endif()
