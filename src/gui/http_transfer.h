@@ -124,6 +124,15 @@ public:
 		return false;
 	}
 
+	bool PostJson(const wxString &url, const wxString &body)
+	{
+		(void) url;
+		(void) body;
+		return false;
+	}
+
+	int Status() const { return 0; }
+
 	const wxString &Body() const { return body_; }
 	const wxString &Error() const { return error_; }
 	bool WasCancelled() const { return false; }
@@ -162,6 +171,27 @@ public:
 		return Run(url, wxWebRequest::Storage_File, dest_path);
 	}
 
+	/**
+	 * POST @body to @url, and take the response into Body().
+	 *
+	 * The response is wanted whether or not the request succeeded: an API
+	 * that refuses says why in the body, and reporting "it failed" when the
+	 * server has explained itself helps nobody.
+	 */
+	bool PostJson(const wxString &url, const wxString &body)
+	{
+		post_body_ = body;
+		post_ = true;
+		const bool ok = Run(url, wxWebRequest::Storage_Memory, wxEmptyString);
+
+		post_ = false;
+		post_body_.clear();
+		return ok;
+	}
+
+	/** The response status, or 0 if the request never got one. */
+	int Status() const { return status_; }
+
 	const wxString &Body() const { return body_; }
 	const wxString &Error() const { return error_; }
 	bool WasCancelled() const { return cancelled_; }
@@ -187,6 +217,7 @@ private:
 
 		ok_ = false;
 		cancelled_ = false;
+		status_ = 0;
 		error_.clear();
 		body_.clear();
 		dest_path_ = dest_path;
@@ -200,6 +231,11 @@ private:
 		request_.SetHeader("X-Requested-By", HttpRequestedByHeader());
 		request_.SetHeader("User-Agent", HttpRequestedByHeader());
 		request_.SetStorage(storage);
+
+		if (post_) {
+			request_.SetData(post_body_, "application/json");
+			request_.SetHeader("Accept", "application/json");
+		}
 
 		Bind(wxEVT_WEBREQUEST_STATE, &Transfer::OnState, this);
 		Bind(wxEVT_TIMER, &Transfer::OnTick, this);
@@ -235,11 +271,18 @@ private:
 		case wxWebRequest::State_Completed: {
 			const wxWebResponse &response = event.GetResponse();
 
-			if (response.GetStatus() != 200) {
+			status_ = response.GetStatus();
+
+			if (status_ != 200) {
 				error_ = wxString::Format(
 				    "The server answered %d (%s).",
-				    response.GetStatus(),
-				    response.GetStatusText());
+				    status_, response.GetStatusText());
+				/* Kept for a caller that can read it: an API
+				   that refuses explains itself in the body, and
+				   the status alone is not that explanation. */
+				if (dest_path_.empty()) {
+					body_ = response.AsString();
+				}
 				break;
 			}
 
@@ -303,6 +346,9 @@ private:
 	wxString dest_path_;
 	wxString body_;
 	wxString error_;
+	wxString post_body_;
+	bool post_ = false;
+	int status_ = 0;
 	std::map<wxString, wxString> headers_;
 	bool ok_ = false;
 	bool cancelled_ = false;

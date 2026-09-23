@@ -474,6 +474,25 @@ typedef struct {
 	 * be discovered.
 	 */
 	int community_net_enabled;	/**< Join the shared Community Network */
+
+	/*
+	 * Nexus: a shared wire where every machine is identified by a certificate
+	 * it enrolled for. The relay refuses frames claiming a MAC address other
+	 * than the one it certified, and a user can run private networks as well
+	 * as the commons.
+	 *
+	 * The relay is not a setting: everybody who joins joins the same one, and
+	 * which networks a machine may use is the relay's answer rather than
+	 * something configured here. See net_quic.h.
+	 *
+	 * The three files are what enrolment produces. Until enrolment is in the
+	 * emulator they are made outside it and named here.
+	 */
+	int nexus_enabled;		/**< Join Nexus */
+	char nexus_ca[512];		/**< The CA that issued the relay's certificate */
+	char nexus_cert[512];		/**< This machine's certificate */
+	char nexus_key[512];		/**< Its private key, which never leaves here */
+
 	int cpu_idle;		/**< Attempt to reduce CPU usage */
 	int show_fullscreen_message;	/**< Show explanation of how to leave fullscreen, on entering fullscreen */
 	int display_scaling;	/**< How the guest's screen is drawn in the window (DisplayScaling) */

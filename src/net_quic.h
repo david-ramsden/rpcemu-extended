@@ -80,7 +80,23 @@ extern "C" {
 #endif
 
 /**
- * Connect to the configured relay.
+ * The relay, which is not a setting.
+ *
+ * Everybody who joins Nexus joins the same one: a machine's networks are the
+ * relay's answer at authorisation rather than something chosen here, so there
+ * is nothing for a user to configure and no way to end up on a wire their
+ * peers are not on.
+ *
+ * RPCEMU_NEXUS_RELAY overrides it, as "host" or "host:port", for developing
+ * against a relay of your own. It is deliberately an environment variable and
+ * not a setting: pointing a machine somewhere else is a thing to do while
+ * working on Nexus, not a choice to offer.
+ */
+#define NEXUS_RELAY_HOST	"nexus.branchthroughzero.co.uk"
+#define NEXUS_RELAY_PORT	33445
+
+/**
+ * Connect to the relay.
  *
  * Does nothing and reports failure when the machine has no relay configured or
  * has not enrolled, which is how network-nat.c decides whether to use another
@@ -91,6 +107,23 @@ extern "C" {
  *         -1 if there is nothing to connect to
  */
 extern int net_quic_init(void);
+
+/**
+ * Connect to a relay, named rather than read from the configuration.
+ *
+ * What net_quic_init() calls once it has the machine's settings, and what a
+ * test uses to reach a relay without a machine behind it.
+ *
+ * @param host      The relay
+ * @param port      Its port
+ * @param ca_file   The certificate authority that issued the relay's
+ *                  certificate, pinned rather than taken from the system store
+ * @param cert_file This machine's certificate
+ * @param key_file  Its private key
+ * @return          0 if the connection has started, -1 with the reason logged
+ */
+extern int net_quic_connect(const char *host, int port, const char *ca_file,
+    const char *cert_file, const char *key_file);
 
 /**
  * Disconnect, release the socket, and stop wanting a connection.

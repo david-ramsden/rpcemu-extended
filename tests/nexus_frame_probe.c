@@ -25,9 +25,6 @@
 #include "net_quic.h"
 #include "nexus_framing.h"
 
-extern int net_quic_connect(const char *host, int port, const char *ca_file,
-    const char *cert_file, const char *key_file);
-
 /* Filled in by the stub network_nat_inject_packet() below, which is where a
    frame arrives when it has come all the way back up the wire. */
 int received_count;

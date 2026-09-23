@@ -39,6 +39,18 @@ net_quic_init(void)
 	return -1;
 }
 
+int
+net_quic_connect(const char *host, int port, const char *ca_file,
+    const char *cert_file, const char *key_file)
+{
+	(void) host;
+	(void) port;
+	(void) ca_file;
+	(void) cert_file;
+	(void) key_file;
+	return -1;
+}
+
 void
 net_quic_close(void)
 {

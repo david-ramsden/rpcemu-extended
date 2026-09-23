@@ -848,6 +848,20 @@ extern "C" void config_load_from_path(Config *cfg, const char *path)
 	settings.Read("community_net_enabled", &value, 0L);
 	cfg->community_net_enabled = static_cast<int>(value);
 
+	/* Nexus: the relay this machine joins, and the certificate it joins with.
+	   See net_quic.h. */
+	settings.Read("nexus_enabled", &value, 0L);
+	cfg->nexus_enabled = static_cast<int>(value);
+	settings.Read("nexus_ca", &sText, wxEmptyString);
+	strncpy(cfg->nexus_ca, sText.utf8_str().data(), sizeof(cfg->nexus_ca) - 1);
+	cfg->nexus_ca[sizeof(cfg->nexus_ca) - 1] = '\0';
+	settings.Read("nexus_cert", &sText, wxEmptyString);
+	strncpy(cfg->nexus_cert, sText.utf8_str().data(), sizeof(cfg->nexus_cert) - 1);
+	cfg->nexus_cert[sizeof(cfg->nexus_cert) - 1] = '\0';
+	settings.Read("nexus_key", &sText, wxEmptyString);
+	strncpy(cfg->nexus_key, sText.utf8_str().data(), sizeof(cfg->nexus_key) - 1);
+	cfg->nexus_key[sizeof(cfg->nexus_key) - 1] = '\0';
+
 	settings.Read("network_capture", &sText, wxEmptyString);
 	config_replace_strdup(&cfg->network_capture, sText);
 

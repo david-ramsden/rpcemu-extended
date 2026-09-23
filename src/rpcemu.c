@@ -342,6 +342,10 @@ Config config = {
 	"",			/* json_net_host */
 	33445,			/* json_net_port (the server's own default) */
 	0,			/* community_net_enabled (OFF: opt in, and only after the disclaimer) */
+	0,			/* nexus_enabled (OFF: needs an enrolled certificate) */
+	"",			/* nexus_ca */
+	"",			/* nexus_cert */
+	"",			/* nexus_key */
 	0,			/* cpu_idle */
 	1,			/* show_fullscreen_message */
 	DisplayScaling_ActualSize,	/* display_scaling */

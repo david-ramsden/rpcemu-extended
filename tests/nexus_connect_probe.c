@@ -22,11 +22,6 @@
 
 #include "net_quic.h"
 
-/* Provided by the emulator; stubbed here, because the probe has no guest to
-   deliver to and no configuration to read. */
-extern int net_quic_connect(const char *host, int port, const char *ca_file,
-    const char *cert_file, const char *key_file);
-
 int
 main(int argc, char *argv[])
 {

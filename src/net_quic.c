@@ -778,13 +778,54 @@ net_quic_init(void)
 	q.tx_stream = -1;
 	q.rx_stream = -1;
 
-	/* Nothing yet reads a relay address or a certificate out of the
-	   machine's configuration, so there is nothing to connect to. The
-	   settings and the enrolment come next; until then this reports "no
-	   relay configured" and network-nat.c uses another wire.
+	if (!config.nexus_enabled) {
+		return -1;
+	}
 
-	   net_quic_connect() below is what the settings will call. */
-	return -1;
+	/* The certificate is what identifies this machine to the relay, so
+	   without one there is nothing to join with. A machine set to use Nexus
+	   but not enrolled is a configuration mistake rather than one that
+	   should quietly use a different wire, so it is said out loud. */
+	if (config.nexus_ca[0] == '\0' || config.nexus_cert[0] == '\0' ||
+	    config.nexus_key[0] == '\0') {
+		rpclog("net_quic: Nexus is enabled but this machine has not "
+		       "enrolled - no certificate authority, certificate or key\n");
+		return -1;
+	}
+
+	{
+		char host[256];
+		int port = NEXUS_RELAY_PORT;
+		const char *override = getenv("RPCEMU_NEXUS_RELAY");
+
+		snprintf(host, sizeof(host), "%s", NEXUS_RELAY_HOST);
+
+		if (override != NULL && override[0] != '\0') {
+			const char *colon = strrchr(override, ':');
+
+			if (colon != NULL && colon[1] != '\0') {
+				const size_t len = (size_t) (colon - override);
+
+				if (len < sizeof(host)) {
+					memcpy(host, override, len);
+					host[len] = '\0';
+					port = atoi(colon + 1);
+				}
+			} else {
+				snprintf(host, sizeof(host), "%s", override);
+			}
+			rpclog("net_quic: RPCEMU_NEXUS_RELAY is set, so joining %s:%d\n",
+			    host, port);
+		}
+
+		/* A relay that cannot be reached is not a reason to use another
+		   wire: this machine's peers are on Nexus, so it stays here and
+		   keeps trying. net_quic_connect() has said why. */
+		(void) net_quic_connect(host, port, config.nexus_ca,
+		    config.nexus_cert, config.nexus_key);
+	}
+
+	return 0;
 }
 
 /**
