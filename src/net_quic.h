@@ -126,6 +126,11 @@ extern int net_quic_wants_connection(void);
  * and not optional: the QUIC library accepts an oversized datagram and then
  * discards it without a word.
  *
+ * Queued rather than sent: building a packet and putting it on the socket both
+ * happen in net_quic_poll(), so there is one place that talks to the network
+ * and one place that decides what goes in a packet. A frame offered when the
+ * queue is full is dropped, which is what a wire does when it is busy.
+ *
  * @param frame     Complete Ethernet frame
  * @param frame_len Length in bytes
  */

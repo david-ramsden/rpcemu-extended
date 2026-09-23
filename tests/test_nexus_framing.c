@@ -61,9 +61,9 @@ main(void)
 	printf("the constants the relay also uses\n");
 	/* Pinned, not computed: the relay has the same numbers written down,
 	   and a change on one side has to be a change on both. */
-	check("a QUIC datagram carries 1170 bytes", NEXUS_MAX_DATAGRAM == 1170);
-	check("a whole frame may be 1167", NEXUS_MAX_WHOLE == 1167);
-	check("a piece of one may be 1163", NEXUS_MAX_PIECE == 1163);
+	check("a QUIC datagram carries 1152 bytes", NEXUS_MAX_DATAGRAM == 1152);
+	check("a whole frame may be 1149", NEXUS_MAX_WHOLE == 1149);
+	check("a piece of one may be 1145", NEXUS_MAX_PIECE == 1145);
 	check("the header is 3 bytes, 7 when fragmented",
 	    NEXUS_HEADER_LEN == 3 && NEXUS_FRAGMENT_HEADER_LEN == 7);
 	/* The largest frame needs two pieces; the ceiling is three. The slack
@@ -114,10 +114,10 @@ main(void)
 
 	printf("\nthe boundary between whole and split\n");
 	make_frame(frame, NEXUS_MAX_WHOLE, 1);
-	check("1167 still goes whole",
+	check("1149 still goes whole",
 	    nexus_encode(1, frame, NEXUS_MAX_WHOLE, 0, out) == 1);
 	make_frame(frame, NEXUS_MAX_WHOLE + 1, 1);
-	check("1168 is split",
+	check("1150 is split",
 	    nexus_encode(1, frame, NEXUS_MAX_WHOLE + 1, 0, out) == 2);
 
 	printf("\nlengths the wire format does not allow\n");

@@ -112,6 +112,14 @@ static struct {
 	unsigned	vlan;		/**< the network joined, 0 until then */
 	int		joined;
 
+	/* Datagrams waiting for a packet to go in. Bounded and dropped from
+	   when full: a wire loses frames when it is busy, and holding them
+	   would turn a burst into unbounded memory. */
+	NexusDatagram	dgram_queue[32];
+	unsigned	dgram_head;
+	unsigned	dgram_count;
+	unsigned long	dgram_dropped;
+
 	NexusReassembler	reasm;
 	uint16_t		next_frame_id;
 } q;
@@ -475,20 +483,21 @@ net_quic_tx(const uint8_t *frame, int frame_len)
 		return;
 	}
 
+	/* All the pieces or none of them. Half a fragmented frame is bytes on
+	   the wire that can never be reassembled, and the far end holds them
+	   until they expire. */
+	if (q.dgram_count + (unsigned) n > (unsigned) (sizeof(q.dgram_queue) /
+	        sizeof(q.dgram_queue[0]))) {
+		q.dgram_dropped++;
+		return;
+	}
+
 	for (i = 0; i < n; i++) {
-		ngtcp2_vec vec;
-		ngtcp2_ssize written;
+		const unsigned slot = (q.dgram_head + q.dgram_count) %
+		    (sizeof(q.dgram_queue) / sizeof(q.dgram_queue[0]));
 
-		vec.base = datagrams[i].bytes;
-		vec.len = datagrams[i].len;
-
-		written = ngtcp2_conn_writev_datagram(q.conn, NULL, NULL, NULL, 0,
-		    NULL, NGTCP2_WRITE_DATAGRAM_FLAG_NONE, 0, &vec, 1, timestamp());
-		if (written < 0) {
-			rpclog("net_quic: could not queue a datagram: %s\n",
-			    ngtcp2_strerror((int) written));
-			return;
-		}
+		q.dgram_queue[slot] = datagrams[i];
+		q.dgram_count++;
 	}
 }
 
@@ -895,6 +904,46 @@ write_packets(void)
 			vec.len = q.tx_queue_len - q.tx_queue_sent;
 			vec_count = 1;
 			stream = q.tx_stream;
+		}
+
+		/* A queued frame goes first: it is the traffic the wire exists
+		   for, and the control stream is a line of JSON now and then.
+		   Both go through a writev_* call, which is what turns them
+		   into a packet - neither is sent by queueing it. */
+		if (q.dgram_count > 0) {
+			ngtcp2_vec dvec;
+			int accepted = 0;
+
+			dvec.base = q.dgram_queue[q.dgram_head].bytes;
+			dvec.len = q.dgram_queue[q.dgram_head].len;
+
+			written = ngtcp2_conn_writev_datagram(q.conn, &ps.path,
+			    &pi, buf, sizeof(buf), &accepted,
+			    NGTCP2_WRITE_DATAGRAM_FLAG_NONE, 0, &dvec, 1,
+			    timestamp());
+
+			if (written < 0) {
+				rpclog("net_quic: cannot write a datagram: %s\n",
+				    ngtcp2_strerror((int) written));
+				return -1;
+			}
+
+			/* Zero means it did not fit this time; the packet
+			   still has to go, and the datagram stays queued. */
+			if (accepted > 0) {
+				q.dgram_head = (q.dgram_head + 1) %
+				    (sizeof(q.dgram_queue) / sizeof(q.dgram_queue[0]));
+				q.dgram_count--;
+			}
+
+			if (written == 0) {
+				break;
+			}
+
+			if (send(q.fd, (const char *) buf, (size_t) written, 0) < 0) {
+				break;
+			}
+			continue;
 		}
 
 		written = ngtcp2_conn_writev_stream(q.conn, &ps.path, &pi, buf,

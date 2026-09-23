@@ -68,21 +68,27 @@ extern "C" {
  * The datagram budget, measured rather than estimated.
  *
  * The QUIC packet size stays at 1200 - the floor QUIC guarantees is
- * carryable - because the relay's library does no path MTU discovery: raising
- * it asserts a path rather than finding one, and a peer behind a tunnel, a
- * PPPoE link or a VPN would then black-hole every full-size packet. A
- * datagram carries the packet size less 30 bytes of overhead.
+ * carryable - because neither library does path MTU discovery: raising it
+ * asserts a path rather than finding one, and a peer behind a tunnel, a PPPoE
+ * link or a VPN would then black-hole every full-size packet.
+ *
+ * The overhead is the QUIC library's, not QUIC's: aioquic needs 30 bytes at
+ * this packet size and ngtcp2 needs 43. It is set for the larger, with margin,
+ * because a datagram that exceeds it is built, accepted and then dropped with
+ * nothing reported at either end.
+ *
+ * Shared with relay/nexus_relay/framing.py. The two have to agree.
  */
 #define NEXUS_QUIC_PACKET_SIZE	1200
-#define NEXUS_DATAGRAM_OVERHEAD	30
+#define NEXUS_DATAGRAM_OVERHEAD	48
 #define NEXUS_MAX_DATAGRAM	(NEXUS_QUIC_PACKET_SIZE - NEXUS_DATAGRAM_OVERHEAD)
 
 #define NEXUS_HEADER_LEN	3
 #define NEXUS_FRAGMENT_HEADER_LEN	7
 
 /** The largest frame that travels whole, and the largest piece of a split one. */
-#define NEXUS_MAX_WHOLE		(NEXUS_MAX_DATAGRAM - NEXUS_HEADER_LEN)		/* 1167 */
-#define NEXUS_MAX_PIECE		(NEXUS_MAX_DATAGRAM - NEXUS_FRAGMENT_HEADER_LEN)	/* 1163 */
+#define NEXUS_MAX_WHOLE		(NEXUS_MAX_DATAGRAM - NEXUS_HEADER_LEN)		/* 1149 */
+#define NEXUS_MAX_PIECE		(NEXUS_MAX_DATAGRAM - NEXUS_FRAGMENT_HEADER_LEN)	/* 1145 */
 
 #define NEXUS_FLAG_FRAGMENT	0x80u
 #define NEXUS_FLAG_RESERVED	0x7fu
