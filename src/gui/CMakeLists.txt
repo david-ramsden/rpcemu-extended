@@ -24,6 +24,8 @@ set(GUI_SOURCES
     config_paths.cpp
     folder_transfer.cpp
     machine_edit_dialog.cpp
+    # Needs wolfSSL for the key and the request, so only when Nexus is built.
+    $<$<BOOL:${RPCEMU_ENABLE_NEXUS}>:nexus_enrol.cpp>
     new_machine_dialog.cpp
     guest_command.cpp
     package_dialog.cpp
@@ -114,6 +116,13 @@ target_compile_definitions(${RPCEMU_GUI_TARGET} PRIVATE
     RPCEMU_VERSION="${RPCEMU_VERSION}"
     RPCEMU_INSTALL_DATADIR="${CMAKE_INSTALL_PREFIX}/share/rpcemu"
 )
+
+# Enrolment makes the key and the certificate request itself, so it needs
+# wolfSSL's headers. The libraries come with rpcemu_core, which links them.
+if(RPCEMU_ENABLE_NEXUS)
+    target_include_directories(${RPCEMU_GUI_TARGET} PRIVATE ${WOLFSSL_INCLUDE_DIRS})
+    target_compile_definitions(${RPCEMU_GUI_TARGET} PRIVATE RPCEMU_HAVE_NEXUS)
+endif()
 
 if(RPCEMU_DYNAREC)
     target_compile_definitions(${RPCEMU_GUI_TARGET} PRIVATE RPCEMU_BUILD_DYNAREC=1)
