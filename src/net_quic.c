@@ -782,21 +782,25 @@ net_quic_init(void)
 		return -1;
 	}
 
-	/* The certificate is what identifies this machine to the relay, so
-	   without one there is nothing to join with. A machine set to use Nexus
-	   but not enrolled is a configuration mistake rather than one that
-	   should quietly use a different wire, so it is said out loud. */
-	if (config.nexus_ca[0] == '\0' || config.nexus_cert[0] == '\0' ||
-	    config.nexus_key[0] == '\0') {
-		rpclog("net_quic: Nexus is enabled but this machine has not "
-		       "enrolled - no certificate authority, certificate or key\n");
-		return -1;
-	}
-
 	{
+		const char *datadir = rpcemu_get_machine_datadir();
+		char ca[512], cert[512], key[512];
 		char host[256];
 		int port = NEXUS_RELAY_PORT;
-		const char *override = getenv("RPCEMU_NEXUS_RELAY");
+		const char *override;
+
+		if (datadir == NULL || datadir[0] == '\0') {
+			rpclog("net_quic: this machine has no directory of its "
+			       "own, so its enrolment cannot be found\n");
+			return -1;
+		}
+
+		/* datadir ends in a separator already. */
+		snprintf(ca, sizeof(ca), "%snexus-ca.crt", datadir);
+		snprintf(cert, sizeof(cert), "%snexus.crt", datadir);
+		snprintf(key, sizeof(key), "%snexus.key", datadir);
+
+		override = getenv("RPCEMU_NEXUS_RELAY");
 
 		snprintf(host, sizeof(host), "%s", NEXUS_RELAY_HOST);
 
@@ -821,8 +825,7 @@ net_quic_init(void)
 		/* A relay that cannot be reached is not a reason to use another
 		   wire: this machine's peers are on Nexus, so it stays here and
 		   keeps trying. net_quic_connect() has said why. */
-		(void) net_quic_connect(host, port, config.nexus_ca,
-		    config.nexus_cert, config.nexus_key);
+		(void) net_quic_connect(host, port, ca, cert, key);
 	}
 
 	return 0;

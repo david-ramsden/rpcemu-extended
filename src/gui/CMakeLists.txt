@@ -24,8 +24,9 @@ set(GUI_SOURCES
     config_paths.cpp
     folder_transfer.cpp
     machine_edit_dialog.cpp
-    # Needs wolfSSL for the key and the request, so only when Nexus is built.
-    $<$<BOOL:${RPCEMU_ENABLE_NEXUS}>:nexus_enrol.cpp>
+    # nexus_enrol.cpp needs wolfSSL for the key and the request; without it the
+    # stub keeps the settings working and says why enrolling cannot be done.
+    $<IF:$<BOOL:${RPCEMU_ENABLE_NEXUS}>,nexus_enrol.cpp,nexus_enrol_stub.cpp>
     new_machine_dialog.cpp
     guest_command.cpp
     package_dialog.cpp

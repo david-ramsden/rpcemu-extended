@@ -61,6 +61,7 @@ extern "C" {
 
 #include "display_options.h"
 #include "mac_address_input.h"
+#include "nexus_enrol.h"
 
 namespace {
 
@@ -1069,45 +1070,112 @@ wxWindow *MachineEditDialog::BuildNetworkPage(wxWindow *parent)
 	    [this](wxCommandEvent &) { UpdateJsonNetEnabled(); });
 
 	/*
-	 * The Community Network: the same transport as the box above, joining one
-	 * shared server instead of one of the user's own. Its own box because it is
-	 * not a variation on that setting - there is nothing to configure, both can
-	 * be on at once, and what it needs is not a server name but the user
-	 * understanding what they are joining.
+	 * Nexus. Its own box because it is not a variation on the setting above:
+	 * there is nothing to point it at, and what it needs is an identity rather
+	 * than an address.
 	 */
-	auto *community_box =
-	    new wxStaticBoxSizer(wxVERTICAL, page, "Community Network");
-	wxWindow *community_parent = community_box->GetStaticBox();
+	auto *nexus_box = new wxStaticBoxSizer(wxVERTICAL, page, "Nexus");
+	wxWindow *nexus_parent = nexus_box->GetStaticBox();
 
-	community_net_check_ = new wxCheckBox(community_parent, wxID_ANY,
-	    "Join the Community Network");
+	nexus_check_ = new wxCheckBox(nexus_parent, wxID_ANY, "Join Nexus");
 
-	auto *community_note = MakeNote(community_parent,
-	    "One shared network with other people running RPCEmu, for reaching each "
-	    "other's ShareFS discs and printers. It is public and unencrypted: "
-	    "anything this machine shares on it is reachable by people you do not "
-	    "know. There is nothing to configure, and it can be used at the same "
-	    "time as a server of your own.");
+	nexus_status_ = new wxStaticText(nexus_parent, wxID_ANY, wxEmptyString);
 
-	community_box->Add(community_net_check_, 0, wxALL, 6);
-	community_box->Add(community_note, 0, wxEXPAND | wxALL, 6);
+	auto *enrol_row = new wxBoxSizer(wxHORIZONTAL);
 
-	/* Asked on the way in, never on the way out: a box being ticked is the
-	   moment the user is deciding, and the Cancel button on this dialogue must
-	   stay an honest way out of it. */
-	community_net_check_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent &) {
-		if (community_net_check_->GetValue() && !ConfirmCommunityNetwork()) {
-			community_net_check_->SetValue(false);
-		}
-	});
+	nexus_token_edit_ = new wxTextCtrl(nexus_parent, wxID_ANY, wxEmptyString);
+	nexus_enrol_button_ = new wxButton(nexus_parent, wxID_ANY, "Enrol");
+
+	enrol_row->Add(new wxStaticText(nexus_parent, wxID_ANY, "Enrolment token:"),
+	    0, wxALIGN_CENTRE_VERTICAL | wxRIGHT, 6);
+	enrol_row->Add(nexus_token_edit_, 1, wxALIGN_CENTRE_VERTICAL | wxRIGHT, 6);
+	enrol_row->Add(nexus_enrol_button_, 0);
+
+	auto *nexus_note = MakeNote(nexus_parent,
+	    "A shared network with other people running RPCEmu, for reaching each "
+	    "other's ShareFS discs and printers. Every machine is identified by a "
+	    "certificate it enrols for, so nobody can send frames as somebody else, "
+	    "and you can make private networks and invite people to them.\n\n"
+	    "Sign in on the Nexus web site, add this machine, and paste the "
+	    "enrolment token it gives you. The key stays on this computer and is "
+	    "never sent anywhere.");
+
+	nexus_box->Add(nexus_check_, 0, wxALL, 6);
+	nexus_box->Add(nexus_status_, 0, wxEXPAND | wxLEFT | wxRIGHT, 6);
+	nexus_box->Add(enrol_row, 0, wxEXPAND | wxALL, 6);
+	nexus_box->Add(nexus_note, 0, wxEXPAND | wxALL, 6);
+
+	nexus_enrol_button_->Bind(wxEVT_BUTTON, &MachineEditDialog::OnNexusEnrol, this);
+	nexus_check_->Bind(wxEVT_CHECKBOX,
+	    [this](wxCommandEvent &) { UpdateNexusState(); });
 
 	auto *sizer = new wxBoxSizer(wxVERTICAL);
 	sizer->Add(form, 0, wxEXPAND | wxALL, 10);
 	sizer->Add(note, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 	sizer->Add(json_box, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
-	sizer->Add(community_box, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+	sizer->Add(nexus_box, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 	page->SetSizer(sizer);
 	return page;
+}
+
+/**
+ * The enrolment state, shown and acted on.
+ *
+ * A machine that has not enrolled cannot join, so the tick box follows the
+ * certificate rather than the other way round.
+ */
+void
+MachineEditDialog::UpdateNexusState()
+{
+	char dir[512];
+
+	rpcemu_machine_datadir_for(dir, sizeof(dir),
+	    CurrentMachineNameForHd().utf8_str().data());
+
+	const NexusEnrolment e = NexusEnrolmentFor(wxString::FromUTF8(dir));
+
+	if (e.complete) {
+		nexus_status_->SetLabel("This machine is enrolled.");
+		nexus_enrol_button_->SetLabel("Enrol again");
+	} else {
+		nexus_status_->SetLabel("This machine is not enrolled yet.");
+		nexus_enrol_button_->SetLabel("Enrol");
+		nexus_check_->SetValue(false);
+	}
+
+	nexus_check_->Enable(e.complete);
+}
+
+void
+MachineEditDialog::OnNexusEnrol(wxCommandEvent &)
+{
+	char dir[512];
+	wxString error;
+
+	rpcemu_machine_datadir_for(dir, sizeof(dir),
+	    CurrentMachineNameForHd().utf8_str().data());
+
+	/* The MAC as it stands in this dialogue rather than as saved: the relay
+	   refuses frames from any address but the one it certified, so enrolling
+	   with one and then saving another would produce a machine that connects
+	   and cannot be heard. */
+	const wxString mac = SelectedMacAddress();
+
+	wxBusyCursor busy;
+
+	if (!NexusEnrol(this, wxString::FromUTF8(dir),
+	        nexus_token_edit_->GetValue(), mac, error)) {
+		wxMessageBox(error, "Enrolment failed", wxOK | wxICON_ERROR, this);
+		UpdateNexusState();
+		return;
+	}
+
+	nexus_token_edit_->Clear();
+	UpdateNexusState();
+	nexus_check_->SetValue(true);
+
+	wxMessageBox("This machine is now enrolled on Nexus.", "Enrolled",
+	    wxOK | wxICON_INFORMATION, this);
 }
 
 /**
@@ -1206,152 +1274,6 @@ wxString MachineEditDialog::SelectedMacAddress() const
  * who is agreeing; the answer and its date live in the preferences (see
  * gui_preferences.h). Somebody who has already agreed is not asked again.
  */
-namespace {
-
-class CommunityNetworkDialog : public wxDialog {
-public:
-	explicit CommunityNetworkDialog(wxWindow *parent)
-	    : wxDialog(parent, wxID_ANY, "Join the Community Network")
-	{
-		/* Wide enough for a sentence to breathe, narrow enough to stay a
-		   dialogue rather than a document. Everything wraps to it. */
-		const int width = 520;
-
-		auto *columns = new wxBoxSizer(wxHORIZONTAL);
-		auto *text = new wxBoxSizer(wxVERTICAL);
-
-		columns->Add(new wxStaticBitmap(this, wxID_ANY,
-		        wxArtProvider::GetBitmap(wxART_WARNING, wxART_MESSAGE_BOX)),
-		    0, wxALIGN_TOP | wxRIGHT, 16);
-
-		auto *heading = new wxStaticText(this, wxID_ANY,
-		    "Join the Community Network?");
-		wxFont heading_font = heading->GetFont();
-
-		heading_font.MakeBold();
-		heading_font.SetPointSize(heading_font.GetPointSize() + 3);
-		heading->SetFont(heading_font);
-		text->Add(heading, 0, wxBOTTOM, 12);
-
-		AddParagraph(this, text, width,
-		    "This machine will share one network with other people's machines, "
-		    "over the internet. Please read this before you turn it on.");
-
-		static const char *const points[] = {
-		    "Nothing on this network is encrypted or authenticated. Every "
-		    "frame this machine sends can be read by everyone else on it, and "
-		    "anyone can claim to be anyone.",
-
-		    "RISC OS has no meaningful security. ShareFS, Access and the rest "
-		    "were written for a trusted office network in the 1990s: a disc "
-		    "you share is shared with everybody, and file protection is a "
-		    "convention rather than a defence.",
-
-		    "Anything this machine offers is public. Discs, folders and "
-		    "printers it shares are reachable by strangers, and anything they "
-		    "send you arrives with no check on where it came from. Keep "
-		    "personal data, credentials and work files off it, including other "
-		    "people's personal data.",
-
-		    "Treat the machine as disposable. Anything the guest can write to, "
-		    "somebody else can ask it to write to. Your IP address is visible "
-		    "to the server, and whoever runs it may log connections.",
-
-		    "The network is provided as it is, with no undertaking that it "
-		    "works, stays available, or is free of other people's mistakes or "
-		    "bad behaviour. So far as the law allows, the authors and "
-		    "contributors of RPCEmu Extended accept no liability for any loss, "
-		    "damage or disclosure arising from your use of it. You use it at "
-		    "your own risk, and what this machine shares and does on it is "
-		    "your responsibility.",
-		};
-
-		for (const char *point : points) {
-			AddBullet(this, text, width, point);
-		}
-
-		AddParagraph(this, text, width,
-		    "Turning this on is your agreement to the above.");
-
-		columns->Add(text, 1, wxEXPAND);
-
-		auto *buttons = new wxStdDialogButtonSizer();
-		auto *ok = new wxButton(this, wxID_OK, "I agree, join");
-
-		buttons->AddButton(ok);
-		buttons->AddButton(new wxButton(this, wxID_CANCEL, "Cancel"));
-		buttons->Realize();
-
-		/* Cancel, not the agreement, on Return and on the close button: the
-		   safe answer is the one a stray keypress should give. */
-		SetEscapeId(wxID_CANCEL);
-		SetAffirmativeId(wxID_OK);
-		FindWindow(wxID_CANCEL)->SetFocus();
-
-		auto *outer = new wxBoxSizer(wxVERTICAL);
-
-		outer->Add(columns, 1, wxEXPAND | wxALL, 20);
-		outer->Add(buttons, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 20);
-		SetSizerAndFit(outer);
-		CentreOnParent();
-	}
-
-private:
-	/*
-	 * A paragraph, wrapped, with air after it.
-	 *
-	 * The window is passed in rather than asked of the sizer:
-	 * wxSizer::GetContainingWindow() answers null until the sizer has been
-	 * given to one, and these sizers are still being filled in. A label with no
-	 * parent then crashes inside Wrap(), which needs a device context and has
-	 * no window to get one from.
-	 *
-	 * Wrap() at all, because a wxStaticText in a sizer otherwise grows the
-	 * dialogue to fit its longest sentence on one line.
-	 */
-	static void AddParagraph(wxWindow *parent, wxSizer *sizer, int width,
-	                         const wxString &text)
-	{
-		auto *label = new wxStaticText(parent, wxID_ANY, text);
-
-		label->Wrap(width);
-		sizer->Add(label, 0, wxBOTTOM, 12);
-	}
-
-	/* A point, indented under its bullet so the wrapped lines line up with the
-	   first one rather than with the bullet. */
-	static void AddBullet(wxWindow *parent, wxSizer *sizer, int width,
-	                      const wxString &text)
-	{
-		auto *row = new wxBoxSizer(wxHORIZONTAL);
-		auto *bullet = new wxStaticText(parent, wxID_ANY,
-		    wxString::FromUTF8("\xe2\x80\xa2"));
-		auto *label = new wxStaticText(parent, wxID_ANY, text);
-
-		label->Wrap(width - 20);
-		row->Add(bullet, 0, wxRIGHT, 8);
-		row->Add(label, 1, wxEXPAND);
-		sizer->Add(row, 0, wxEXPAND | wxBOTTOM, 12);
-	}
-};
-
-}	/* namespace */
-
-bool MachineEditDialog::ConfirmCommunityNetwork()
-{
-	if (GetCommunityNetworkAccepted() != 0) {
-		return true;
-	}
-
-	CommunityNetworkDialog dlg(this);
-
-	if (dlg.ShowModal() != wxID_OK) {
-		return false;
-	}
-
-	SetCommunityNetworkAccepted((long long) time(NULL));
-	return true;
-}
 
 void MachineEditDialog::UpdateJsonNetEnabled()
 {
@@ -2681,14 +2603,11 @@ void MachineEditDialog::LoadSettings()
 		json_net_host_edit_->SetValue(json_host);
 		json_net_port_edit_->SetValue(static_cast<int>(json_port));
 
-		/* Not asked about here: this is what the machine already had, and a
-		   dialogue that interrogates the user for opening a settings window
-		   would be answered by ticking it off again. The question belongs to
-		   the act of turning it on. */
-		long community_on = 0;
+		long nexus_on = 0;
 
-		settings.Read("community_net_enabled", &community_on, 0L);
-		community_net_check_->SetValue(community_on != 0);
+		settings.Read("nexus_enabled", &nexus_on, 0L);
+		nexus_check_->SetValue(nexus_on != 0);
+		UpdateNexusState();
 		UpdateJsonNetEnabled();
 	}
 
@@ -2913,8 +2832,8 @@ void MachineEditDialog::SaveSettings()
 	settings.Write("json_net_host", json_net_host_edit_->GetValue());
 	settings.Write("json_net_port",
 	    static_cast<long>(json_net_port_edit_->GetValue()));
-	settings.Write("community_net_enabled",
-	    static_cast<long>(community_net_check_->GetValue() ? 1 : 0));
+	settings.Write("nexus_enabled",
+	    static_cast<long>(nexus_check_->GetValue() ? 1 : 0));
 
 	SavePoduleSettings(settings);
 
@@ -3002,7 +2921,7 @@ void MachineEditDialog::ApplySavedSettingsToGlobalConfig(const wxString &rom_dir
 	strncpy(config.json_net_host, json_net_host_edit_->GetValue().utf8_str().data(),
 	    sizeof(config.json_net_host) - 1);
 	config.json_net_host[sizeof(config.json_net_host) - 1] = '\0';
-	config.community_net_enabled = community_net_check_->GetValue() ? 1 : 0;
+	config.nexus_enabled = nexus_check_->GetValue() ? 1 : 0;
 }
 
 wxString MachineEditDialog::CurrentMachineNameForHd() const

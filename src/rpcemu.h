@@ -485,13 +485,11 @@ typedef struct {
 	 * which networks a machine may use is the relay's answer rather than
 	 * something configured here. See net_quic.h.
 	 *
-	 * The three files are what enrolment produces. Until enrolment is in the
-	 * emulator they are made outside it and named here.
+	 * The certificate, key and CA enrolment produces are not settings: they
+	 * live in the machine's own directory under names the emulator chose, so
+	 * net_quic_init() works out where they are rather than being told.
 	 */
 	int nexus_enabled;		/**< Join Nexus */
-	char nexus_ca[512];		/**< The CA that issued the relay's certificate */
-	char nexus_cert[512];		/**< This machine's certificate */
-	char nexus_key[512];		/**< Its private key, which never leaves here */
 
 	int cpu_idle;		/**< Attempt to reduce CPU usage */
 	int show_fullscreen_message;	/**< Show explanation of how to leave fullscreen, on entering fullscreen */

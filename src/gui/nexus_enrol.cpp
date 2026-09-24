@@ -25,6 +25,9 @@
 
 #include "nexus_enrol.h"
 
+#include <memory>
+
+#include <wx/evtloop.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
 #include <wx/textfile.h>
@@ -64,13 +67,6 @@ wxString ApiBase()
 	}
 	return NEXUS_API_BASE;
 }
-
-/** A reporter for Transfer, which wants one and has nothing to report to. */
-class SilentReporter : public RiscosFetchReporter {
-public:
-	bool Stage(const wxString &) override { return true; }
-	bool Progress(long long, long long) override { return true; }
-};
 
 /**
  * One top-level string out of a JSON object.
@@ -154,12 +150,15 @@ bool MakeKeyAndRequest(wxString &key_pem, wxString &csr_pem, wxString &error)
 {
 	WC_RNG rng;
 	ecc_key key;
-	Cert req;
-	byte der[4096];
-	byte pem[4096];
-	byte key_der[1024];
-	byte key_pem_buf[2048];
 	int rc;
+
+	/* On the heap: Cert alone is 25KB, and this runs inside a GTK signal
+	   handler several event loops deep, where that overruns the stack. */
+	const std::unique_ptr<Cert> req(new Cert);
+	const std::unique_ptr<byte[]> der(new byte[4096]);
+	const std::unique_ptr<byte[]> pem(new byte[4096]);
+	const std::unique_ptr<byte[]> key_der(new byte[1024]);
+	const std::unique_ptr<byte[]> key_pem_buf(new byte[2048]);
 
 	if (wc_InitRng(&rng) != 0) {
 		error = "Could not start the random number generator.";
@@ -180,25 +179,24 @@ bool MakeKeyAndRequest(wxString &key_pem, wxString &csr_pem, wxString &error)
 		return false;
 	}
 
-	rc = wc_EccKeyToDer(&key, key_der, sizeof(key_der));
+	rc = wc_EccKeyToDer(&key, key_der.get(), 1024);
 	if (rc < 0) {
 		wc_ecc_free(&key);
 		wc_FreeRng(&rng);
 		error = "Could not encode the key.";
 		return false;
 	}
-	rc = wc_DerToPem(key_der, static_cast<word32>(rc), key_pem_buf,
-	    sizeof(key_pem_buf), ECC_PRIVATEKEY_TYPE);
+	rc = wc_DerToPem(key_der.get(), static_cast<word32>(rc), key_pem_buf.get(), 2048, ECC_PRIVATEKEY_TYPE);
 	if (rc < 0) {
 		wc_ecc_free(&key);
 		wc_FreeRng(&rng);
 		error = "Could not encode the key.";
 		return false;
 	}
-	key_pem = wxString::From8BitData(reinterpret_cast<const char *>(key_pem_buf),
+	key_pem = wxString::From8BitData(reinterpret_cast<const char *>(key_pem_buf.get()),
 	    static_cast<size_t>(rc));
 
-	if (wc_InitCert(&req) != 0) {
+	if (wc_InitCert(req.get()) != 0) {
 		wc_ecc_free(&key);
 		wc_FreeRng(&rng);
 		error = "Could not prepare the request.";
@@ -208,10 +206,10 @@ bool MakeKeyAndRequest(wxString &key_pem, wxString &csr_pem, wxString &error)
 	/* The subject is not what identifies the machine - Nexus puts its own
 	   identifier in the certificate it issues, from the token - so this is
 	   only something for a human reading the request. */
-	strncpy(req.subject.commonName, "RPCEmu Extended", CTC_NAME_SIZE - 1);
-	req.sigType = CTC_SHA256wECDSA;
+	strncpy(req->subject.commonName, "RPCEmu Extended", CTC_NAME_SIZE - 1);
+	req->sigType = CTC_SHA256wECDSA;
 
-	rc = wc_MakeCertReq(&req, der, sizeof(der), nullptr, &key);
+	rc = wc_MakeCertReq(req.get(), der.get(), 4096, nullptr, &key);
 	if (rc < 0) {
 		wc_ecc_free(&key);
 		wc_FreeRng(&rng);
@@ -219,7 +217,7 @@ bool MakeKeyAndRequest(wxString &key_pem, wxString &csr_pem, wxString &error)
 		return false;
 	}
 
-	rc = wc_SignCert(req.bodySz, req.sigType, der, sizeof(der), nullptr, &key, &rng);
+	rc = wc_SignCert(req->bodySz, req->sigType, der.get(), 4096, nullptr, &key, &rng);
 	if (rc < 0) {
 		wc_ecc_free(&key);
 		wc_FreeRng(&rng);
@@ -227,14 +225,14 @@ bool MakeKeyAndRequest(wxString &key_pem, wxString &csr_pem, wxString &error)
 		return false;
 	}
 
-	rc = wc_DerToPem(der, static_cast<word32>(rc), pem, sizeof(pem), CERTREQ_TYPE);
+	rc = wc_DerToPem(der.get(), static_cast<word32>(rc), pem.get(), 4096, CERTREQ_TYPE);
 	if (rc < 0) {
 		wc_ecc_free(&key);
 		wc_FreeRng(&rng);
 		error = "Could not encode the request.";
 		return false;
 	}
-	csr_pem = wxString::From8BitData(reinterpret_cast<const char *>(pem),
+	csr_pem = wxString::From8BitData(reinterpret_cast<const char *>(pem.get()),
 	    static_cast<size_t>(rc));
 
 	wc_ecc_free(&key);
@@ -276,8 +274,8 @@ NexusEnrolment NexusEnrolmentFor(const wxString &machine_dir)
 	return e;
 }
 
-bool NexusEnrol(const wxString &machine_dir, const wxString &token,
-    const wxString &mac, wxString &error)
+bool NexusEnrol(wxWindow *parent, const wxString &machine_dir,
+    const wxString &token, const wxString &mac, wxString &error)
 {
 	wxString key_pem;
 	wxString csr_pem;
@@ -295,8 +293,17 @@ bool NexusEnrol(const wxString &machine_dir, const wxString &token,
 		return false;
 	}
 
-	SilentReporter reporter;
-	Transfer transfer(reporter, "Enrolling", RiscosFetchLoopFactory());
+	/* The progress dialogue is not decoration. It is application modal, and
+	   that is what makes it safe to run the request's own event loop from
+	   inside the settings dialogue: without it the nested loop re-enters the
+	   dialogue that is already running one, and GTK crashes. It also gives
+	   the user something to cancel. */
+	RiscosFetchProgressReporter reporter(parent);
+	/* The same loop factory the package manager uses from its own modal
+	   dialogue. Transfer's fallback constructs the loop differently, and
+	   this is the one shape known to work from inside a dialogue. */
+	Transfer transfer(reporter, "Enrolling this machine on Nexus",
+	    []() -> wxEventLoopBase * { return new wxEventLoop; });
 
 	const wxString body = wxString::Format(
 	    "{\"token\": \"%s\", \"csr\": \"%s\", \"mac\": \"%s\"}",

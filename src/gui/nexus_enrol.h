@@ -46,6 +46,7 @@
 #define NEXUS_ENROL_H
 
 #include <wx/string.h>
+#include <wx/window.h>
 
 /** Where a machine's enrolment is kept, and whether it has one. */
 struct NexusEnrolment {
@@ -71,6 +72,9 @@ NexusEnrolment NexusEnrolmentFor(const wxString &machine_dir);
  * certificate stops working as soon as Nexus issues a new one, so leaving the
  * old files in place would only leave something that cannot connect.
  *
+ * @param parent      The window to hang the progress dialogue on. It is
+ *                    application modal, which is what makes it safe to run the
+ *                    HTTP request's event loop from inside another dialogue.
  * @param machine_dir Where to put the files
  * @param token       What the user pasted, from the web site
  * @param mac         The machine's MAC address; the relay refuses frames from
@@ -78,7 +82,7 @@ NexusEnrolment NexusEnrolmentFor(const wxString &machine_dir);
  * @param error       Set to something worth showing the user on failure
  * @return            true if the machine is now enrolled
  */
-bool NexusEnrol(const wxString &machine_dir, const wxString &token,
-    const wxString &mac, wxString &error);
+bool NexusEnrol(wxWindow *parent, const wxString &machine_dir,
+    const wxString &token, const wxString &mac, wxString &error);
 
 #endif /* NEXUS_ENROL_H */

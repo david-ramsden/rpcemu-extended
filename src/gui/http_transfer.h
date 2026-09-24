@@ -216,6 +216,21 @@ private:
 		wxEventLoopActivator activate(loop.get());
 		wxTimer ticker(this);
 
+		/* Remembered so the handler can end THIS loop rather than
+		   whichever one is active when the request finishes. Those are
+		   not always the same: called from inside a dialogue that is
+		   running its own modal loop, and with a progress dialogue of
+		   our own on top, ending the active one tears down a loop we do
+		   not own while GTK is still dispatching into its window. */
+		/* Cleared however Run() leaves, including the early returns
+		   below: a stale pointer here outlives the loop it names. */
+		struct LoopScope {
+			wxEventLoopBase **slot;
+			~LoopScope() { *slot = nullptr; }
+		} loop_scope{ &loop_ };
+
+		loop_ = loop.get();
+
 		ok_ = false;
 		cancelled_ = false;
 		status_ = 0;
@@ -256,8 +271,16 @@ private:
 			return false;
 		}
 
-		request_.Start();
-		ticker.Start(150);
+		/* Started from inside the loop, not before it. A request that
+		   fails at once - a refused connection, a name that does not
+		   resolve - reports State_Failed from Start(), and a
+		   ScheduleExit() issued before Run() begins is lost: the loop
+		   then runs with nothing left to wait for, pumping a progress
+		   dialogue that nobody will close. */
+		CallAfter([this, &ticker] {
+			request_.Start();
+			ticker.Start(150);
+		});
 		loop->Run();
 		ticker.Stop();
 
@@ -334,7 +357,9 @@ private:
 			return;		/* Still going; keep the loop running */
 		}
 
-		wxEventLoopBase::GetActive()->ScheduleExit();
+		if (loop_ != nullptr) {
+			loop_->ScheduleExit();
+		}
 	}
 
 	void CollectHeaders(const wxWebResponse &response)
@@ -353,6 +378,7 @@ private:
 	RiscosFetchReporter &reporter_;
 	wxString stage_;
 	RiscosFetchLoopFactory make_loop_;
+	wxEventLoopBase *loop_ = nullptr;
 	wxWebRequest request_;
 	wxString dest_path_;
 	wxString body_;
