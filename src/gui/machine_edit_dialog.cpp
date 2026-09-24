@@ -49,6 +49,7 @@ extern "C" {
 #include <wx/notebook.h>
 #include <wx/settings.h>
 #include <wx/filename.h>
+#include <wx/uilocale.h>
 #include <wx/utils.h>
 
 extern "C" {
@@ -1119,6 +1120,26 @@ wxWindow *MachineEditDialog::BuildNetworkPage(wxWindow *parent)
 }
 
 /**
+ * A date as the user's system writes one, or ISO where it has not said.
+ *
+ * wxGetUIDateFormat() rather than FormatDate(), whose %x is the C locale's
+ * unless the whole program's locale is switched over - and that would change
+ * how ToDouble() and ToLong() read version numbers and package indexes too.
+ * A system with no region configured gives %m/%d/%y, which is a guess rather
+ * than a setting, so that falls back to ISO instead.
+ */
+static wxString
+LocaleDate(const wxDateTime &when)
+{
+	const wxString format = wxGetUIDateFormat();
+
+	if (format.empty() || format == "%m/%d/%y" || format == "%m/%d/%Y") {
+		return when.FormatISODate();
+	}
+	return when.Format(format);
+}
+
+/**
  * The enrolment state, shown and acted on.
  *
  * A machine that has not enrolled cannot join, so the tick box follows the
@@ -1134,16 +1155,47 @@ MachineEditDialog::UpdateNexusState()
 
 	const NexusEnrolment e = NexusEnrolmentFor(wxString::FromUTF8(dir));
 
-	if (e.complete) {
-		nexus_status_->SetLabel("This machine is enrolled.");
+	switch (e.state) {
+	case NexusState::Valid:
+	case NexusState::Renewable:
+		/* The date, not just the fact: a certificate lasts ninety days
+		   and renews itself, so the one thing worth showing is when it
+		   would run out if that ever stopped happening. Renewable says
+		   nothing of its own - renewal is automatic, and a date that
+		   has not moved is how somebody notices it has not. */
+		nexus_status_->SetLabel(wxString::Format("This machine is enrolled, until %s.",
+		    LocaleDate(e.not_after)));
 		nexus_enrol_button_->SetLabel("Enrol again");
-	} else {
+		break;
+
+	case NexusState::Expired:
+		/* Past renewal: Nexus refuses to renew a certificate that has
+		   run out, so a fresh token is the only way back. */
+		nexus_status_->SetLabel(wxString::Format(
+		    "This machine's enrolment ran out on %s. Enrol it again.",
+		    LocaleDate(e.not_after)));
+		nexus_enrol_button_->SetLabel("Enrol again");
+		break;
+
+	case NexusState::Unreadable:
+		nexus_status_->SetLabel("This machine's enrolment cannot be read. Enrol it again.");
+		nexus_enrol_button_->SetLabel("Enrol again");
+		break;
+
+	case NexusState::NotEnrolled:
 		nexus_status_->SetLabel("This machine is not enrolled yet.");
 		nexus_enrol_button_->SetLabel("Enrol");
+		break;
+	}
+
+	if (!e.Usable()) {
 		nexus_check_->SetValue(false);
 	}
 
-	nexus_check_->Enable(e.complete);
+	/* Expired and unreadable enrolments cannot join, so the box is not
+	   offered: ticking it would produce a machine that says it is on Nexus
+	   and is refused at the relay. */
+	nexus_check_->Enable(e.Usable());
 }
 
 void

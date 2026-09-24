@@ -46,8 +46,14 @@ NexusEnrolment NexusEnrolmentFor(const wxString &machine_dir)
 	e.ca_path = machine_dir + sep + "nexus-ca.crt";
 	e.cert_path = machine_dir + sep + "nexus.crt";
 	e.key_path = machine_dir + sep + "nexus.key";
-	e.complete = wxFileExists(e.ca_path) && wxFileExists(e.cert_path) &&
-	    wxFileExists(e.key_path);
+
+	/* Valid rather than a state of its own, and the dates left unset.
+	   Parsing the certificate is wolfSSL's work and this build has none, so
+	   the expiry is a thing it cannot know - and a build that cannot connect
+	   either way has no use for it. What the settings need from here is that
+	   the machine is enrolled, which the files answer. */
+	e.state = (wxFileExists(e.ca_path) && wxFileExists(e.cert_path) &&
+	    wxFileExists(e.key_path)) ? NexusState::Valid : NexusState::NotEnrolled;
 
 	return e;
 }

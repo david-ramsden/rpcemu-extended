@@ -25,9 +25,12 @@
 
 #include "nexus_enrol.h"
 
+#include <cstring>
 #include <memory>
 
+#include <wx/datetime.h>
 #include <wx/evtloop.h>
+#include <wx/file.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
 #include <wx/textfile.h>
@@ -35,6 +38,7 @@
 
 #include <wolfssl/options.h>
 #include <wolfssl/wolfcrypt/settings.h>
+#include <wolfssl/wolfcrypt/asn.h>
 #include <wolfssl/wolfcrypt/asn_public.h>
 #include <wolfssl/wolfcrypt/ecc.h>
 #include <wolfssl/wolfcrypt/random.h>
@@ -258,6 +262,79 @@ wxString JsonEscape(const wxString &s)
 	return out;
 }
 
+/**
+ * When a certificate runs out.
+ *
+ * @param path      The PEM file
+ * @param not_after Set to its notAfter, in UTC
+ * @return          true if it was read and parsed
+ */
+bool CertificateExpiry(const wxString &path, wxDateTime &not_after)
+{
+	wxFile file(path, wxFile::read);
+
+	if (!file.IsOpened()) {
+		return false;
+	}
+
+	/* A machine's certificate is around 1KB of PEM. Anything much larger
+	   is not one, and reading it would only find that out later. */
+	const wxFileOffset length = file.Length();
+
+	if (length <= 0 || length > 8192) {
+		return false;
+	}
+
+	const std::unique_ptr<byte[]> pem(new byte[static_cast<size_t>(length)]);
+
+	if (file.Read(pem.get(), static_cast<size_t>(length)) != length) {
+		return false;
+	}
+
+	const std::unique_ptr<byte[]> der(new byte[static_cast<size_t>(length)]);
+	const int der_len = wc_CertPemToDer(pem.get(), static_cast<int>(length),
+	    der.get(), static_cast<int>(length), CERT_TYPE);
+
+	if (der_len < 0) {
+		return false;
+	}
+
+	DecodedCert cert;
+	bool ok = false;
+
+	wc_InitDecodedCert(&cert, der.get(), static_cast<word32>(der_len), nullptr);
+
+	/* NO_VERIFY: the signature is the relay's business and it has the CA to
+	   check it against. This wants the dates out of a file we wrote
+	   ourselves, and verifying here would fail for want of a certificate
+	   manager rather than tell us anything. */
+	if (wc_ParseCert(&cert, CERT_TYPE, NO_VERIFY, nullptr) == 0 &&
+	    cert.afterDate != nullptr && cert.afterDateLen > 0) {
+		const byte *date = nullptr;
+		byte format = 0;
+		int length_of_date = 0;
+
+		if (wc_GetDateInfo(cert.afterDate, cert.afterDateLen, &date,
+		        &format, &length_of_date) == 0) {
+			struct tm when;
+
+			memset(&when, 0, sizeof(when));
+			if (wc_GetDateAsCalendarTime(date, length_of_date, format,
+			        &when) == 0) {
+				/* A certificate's dates are UTC, and wxDateTime(struct
+				   tm) reads one as local time. MakeFromUTC converts
+				   what that produced, so comparing against UNow() below
+				   is not out by the timezone. */
+				not_after = wxDateTime(when).MakeFromUTC();
+				ok = not_after.IsValid();
+			}
+		}
+	}
+
+	wc_FreeDecodedCert(&cert);
+	return ok;
+}
+
 } /* namespace */
 
 NexusEnrolment NexusEnrolmentFor(const wxString &machine_dir)
@@ -268,8 +345,35 @@ NexusEnrolment NexusEnrolmentFor(const wxString &machine_dir)
 	e.ca_path = machine_dir + sep + "nexus-ca.crt";
 	e.cert_path = machine_dir + sep + "nexus.crt";
 	e.key_path = machine_dir + sep + "nexus.key";
-	e.complete = wxFileExists(e.ca_path) && wxFileExists(e.cert_path) &&
-	    wxFileExists(e.key_path);
+
+	if (!wxFileExists(e.ca_path) || !wxFileExists(e.cert_path) ||
+	    !wxFileExists(e.key_path)) {
+		e.state = NexusState::NotEnrolled;
+		return e;
+	}
+
+	if (!CertificateExpiry(e.cert_path, e.not_after)) {
+		/* Three files, one of which is not a certificate. Enrolling
+		   again is the only thing that helps, and saying so is more use
+		   than reporting a machine as enrolled that cannot connect. */
+		e.state = NexusState::Unreadable;
+		return e;
+	}
+
+	e.renew_after = e.not_after;
+	e.renew_after.Subtract(wxDateSpan::Days(NEXUS_RENEW_DAYS));
+
+	{
+		const wxDateTime now = wxDateTime::UNow();
+
+		if (now.IsLaterThan(e.not_after)) {
+			e.state = NexusState::Expired;
+		} else if (now.IsLaterThan(e.renew_after)) {
+			e.state = NexusState::Renewable;
+		} else {
+			e.state = NexusState::Valid;
+		}
+	}
 
 	return e;
 }

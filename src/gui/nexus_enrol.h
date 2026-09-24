@@ -45,21 +45,79 @@
 #ifndef NEXUS_ENROL_H
 #define NEXUS_ENROL_H
 
+#include <wx/datetime.h>
 #include <wx/string.h>
 #include <wx/window.h>
 
-/** Where a machine's enrolment is kept, and whether it has one. */
+/**
+ * What a machine's enrolment is worth, which is not the same as whether it is
+ * there.
+ *
+ * A certificate lasts ninety days and may be renewed from the forty-fifth. The
+ * three-files test cannot tell the difference between a machine that is on the
+ * network and one whose certificate ran out in the spring, and the second is
+ * the one somebody needs telling about - the relay refuses it, and nothing in
+ * the settings said so.
+ */
+enum class NexusState {
+	NotEnrolled,	/**< One or more of the three files is missing. */
+	Unreadable,	/**< Present, but not a certificate this can parse. */
+	Valid,		/**< In date, and not yet worth renewing. */
+	Renewable,	/**< In date, past the renewal date: renew when convenient. */
+	Expired,	/**< Out of date. Only a fresh token fixes this. */
+};
+
+/** Where a machine's enrolment is kept, and what state it is in. */
 struct NexusEnrolment {
 	wxString	ca_path;
 	wxString	cert_path;
 	wxString	key_path;
 
-	/** All three files are present. */
-	bool		complete = false;
+	NexusState	state = NexusState::NotEnrolled;
+
+	/**
+	 * When the certificate runs out, and when it may first be renewed.
+	 *
+	 * Both invalid unless the state is Valid, Renewable or Expired. renew_after
+	 * is worked out from not_after rather than stored: see NEXUS_RENEW_DAYS.
+	 */
+	wxDateTime	not_after;
+	wxDateTime	renew_after;
+
+	/** Enrolled, whatever shape it is in: there is a certificate to renew. */
+	bool Enrolled() const
+	{
+		return state == NexusState::Valid ||
+		    state == NexusState::Renewable ||
+		    state == NexusState::Expired;
+	}
+
+	/** Good enough to connect with. */
+	bool Usable() const
+	{
+		return state == NexusState::Valid ||
+		    state == NexusState::Renewable;
+	}
 };
 
 /**
- * Where this machine's enrolment would be, present or not.
+ * How long before a certificate runs out it may be renewed.
+ *
+ * Nexus decides this, not us: it is nexus.renew_after_days in the web
+ * application's configuration, and the answer to every renewal request carries
+ * a renew_after of its own. This is the same number so that a machine knows
+ * when to ask without having asked, and asking early is refused rather than
+ * harmful. If the two ever disagree, Nexus is right.
+ */
+#define NEXUS_RENEW_DAYS	45
+
+/**
+ * Where this machine's enrolment would be, and what state it is in.
+ *
+ * Reads the certificate rather than only looking for it, so the dates come
+ * back with it. A build without Nexus has no library to parse one with and
+ * reports Valid for anything present - it cannot connect either way, and an
+ * expiry it cannot check is not worth claiming to know.
  *
  * @param machine_dir The machine's own directory
  */
