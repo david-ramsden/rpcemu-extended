@@ -49,6 +49,10 @@
 #include <wx/string.h>
 #include <wx/window.h>
 
+extern "C" {
+#include "../nexus_renew.h"
+}
+
 /**
  * What a machine's enrolment is worth, which is not the same as whether it is
  * there.
@@ -99,17 +103,6 @@ struct NexusEnrolment {
 		    state == NexusState::Renewable;
 	}
 };
-
-/**
- * How long before a certificate runs out it may be renewed.
- *
- * Nexus decides this, not us: it is nexus.renew_after_days in the web
- * application's configuration, and the answer to every renewal request carries
- * a renew_after of its own. This is the same number so that a machine knows
- * when to ask without having asked, and asking early is refused rather than
- * harmful. If the two ever disagree, Nexus is right.
- */
-#define NEXUS_RENEW_DAYS	45
 
 /**
  * Where this machine's enrolment would be, and what state it is in.

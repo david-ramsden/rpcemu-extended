@@ -66,6 +66,7 @@ extern "C" {
 #include "machine_lock.h"
 #include "savestate.h"
 #include "openbus_coproc.h"
+#include "nexus_renew.h"
 }
 
 /* C++ linkage: it takes a std::vector, so it must not be inside the extern "C"
@@ -793,6 +794,15 @@ int RunHeadless(const char *machine_name, bool resume, const char *state_file)
 		        "       lose its settings, so this one will not start. Use a\n"
 		        "       different machine, or stop that one first.\n");
 		return 2;
+	}
+
+	/* The reason renewal is a plain function and not the Manager's job: a
+	   machine set up once through the Manager and run headless from then on
+	   would otherwise never renew, and that is the machine somebody is most
+	   likely to be relying on. Logged, never shown - there is no toolkit
+	   here to show anything on. */
+	if (config.nexus_enabled) {
+		(void) nexus_renew_if_due(rpcemu_get_machine_datadir());
 	}
 
 	/* Resolve the state to load, if any. config_load() has just pointed the

@@ -32,6 +32,7 @@
 #include <stdint.h>
 
 #include "net_quic.h"
+#include "nexus_renew.h"
 
 int
 net_quic_init(void)
@@ -79,4 +80,17 @@ int
 net_quic_poll(void)
 {
 	return 0;
+}
+
+/*
+ * Renewal, which needs wolfSSL to build a signing request and to speak TLS.
+ * A build without it cannot join Nexus either, so there is nothing to keep
+ * current.
+ */
+enum nexus_renew_result
+nexus_renew_if_due(const char *machine_datadir)
+{
+	(void) machine_datadir;
+
+	return NEXUS_RENEW_NOT_ENROLLED;
 }

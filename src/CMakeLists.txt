@@ -327,7 +327,7 @@ if(RPCEMU_ENABLE_NEXUS)
     pkg_check_modules(NGTCP2_WOLFSSL REQUIRED libngtcp2_crypto_wolfssl)
     pkg_check_modules(WOLFSSL REQUIRED wolfssl)
 
-    target_sources(rpcemu_core PRIVATE nexus_framing.c net_quic.c)
+    target_sources(rpcemu_core PRIVATE nexus_framing.c net_quic.c nexus_renew.c)
     target_include_directories(rpcemu_core PRIVATE
         ${NGTCP2_INCLUDE_DIRS} ${NGTCP2_WOLFSSL_INCLUDE_DIRS} ${WOLFSSL_INCLUDE_DIRS})
     target_link_directories(rpcemu_core PUBLIC

@@ -57,6 +57,7 @@ extern "C" {
 #include "savestate.h"
 #include "app_settings.h"
 #include "machine_lock.h"
+#include "nexus_renew.h"
 }
 
 class RpcemuApp : public wxApp {
@@ -969,6 +970,15 @@ bool RpcemuApp::OnInit()
 		ConsoleMessageFlush();
 		wxMessageBox(detail, "Machine already running", wxOK | wxICON_ERROR);
 		return false;
+	}
+
+	/* After the lock, so two copies of a machine cannot renew at once, and
+	   before the emulator starts, so it picks up whatever this wrote. Covers
+	   both graphical routes - from the Manager and from --machine - because
+	   both arrive here. Silent unless something happened; nexus_renew.h says
+	   why it is not a dialogue. */
+	if (config.nexus_enabled) {
+		(void) nexus_renew_if_due(rpcemu_get_machine_datadir());
 	}
 
 	auto *frame = new MainFrame();
