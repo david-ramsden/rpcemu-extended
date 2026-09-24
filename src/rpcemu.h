@@ -456,26 +456,6 @@ typedef struct {
 	int json_net_port;		/**< Its port; 33445 is the server's own default */
 
 	/*
-	 * The Community Network: the same JSON transport, joining one shared
-	 * server that everybody using this option joins, rather than a server the
-	 * user runs. Its address is not a setting - see COMMUNITY_NET_HOST in
-	 * net_json.h - so that everybody who ticks the box lands on the same wire.
-	 *
-	 * It is an open network of strangers with no encryption and no
-	 * authentication, which is why turning it on asks the user to agree to
-	 * something first (see the machine editor).
-	 *
-	 * This and a server of the user's own are independent: neither overrides
-	 * the other, and a machine set for both joins both. net_json_link_wanted()
-	 * answers for one link at a time and the two never consult each other, so
-	 * one server being unreachable is not the other's problem. The cost is
-	 * duplication - both are hubs, so a peer that is also on both is heard
-	 * twice - which community-network.md says plainly rather than leaving to
-	 * be discovered.
-	 */
-	int community_net_enabled;	/**< Join the shared Community Network */
-
-	/*
 	 * Nexus: a shared wire where every machine is identified by a certificate
 	 * it enrolled for. The relay refuses frames claiming a MAC address other
 	 * than the one it certified, and a user can run private networks as well

@@ -1258,23 +1258,6 @@ wxString MachineEditDialog::SelectedMacAddress() const
 }
 
 /** Grey the server fields when the machine is not joining one. */
-/*
- * What joining the Community Network means, and the user's agreement to it.
- *
- * ★ A dialogue of its own rather than a message box, and the reason is the
- * text. wxRichMessageDialog's extended message collapses a blank line to a
- * single break on macOS, so five separate points arrive as one wall of text;
- * and its main message is styled as the heading, so a sentence long enough to
- * say what the network is becomes a two-line title. Both were seen on screen,
- * which is the only way either was going to be found. Here the heading is a
- * heading, the points are laid out with air between them, and the wrapping is
- * ours.
- *
- * Asked once per person rather than once per machine, because it is the person
- * who is agreeing; the answer and its date live in the preferences (see
- * gui_preferences.h). Somebody who has already agreed is not asked again.
- */
-
 void MachineEditDialog::UpdateJsonNetEnabled()
 {
 	const bool on = json_net_check_ != nullptr && json_net_check_->GetValue();

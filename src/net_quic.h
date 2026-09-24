@@ -19,7 +19,7 @@
  */
 
 /*
- * net_quic - the Nexus Community Network wire.
+ * net_quic - the Nexus wire.
  *
  * Ethernet frames over QUIC to a relay, which switches them between the
  * machines on a network. Where net_json.h carries frames to a server somebody

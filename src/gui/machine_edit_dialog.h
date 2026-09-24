@@ -92,11 +92,8 @@ private:
 	wxWindow *BuildNetworkPage(wxWindow *parent);
 	void UpdateJsonNetEnabled();
 
-	/*
-	 * The Community Network's tick box, which is not just a tick box: turning it
-	 * on asks the user to accept what it means first, and puts the box back if
-	 * they decline. Answers whether it is now on.
-	 */
+	/* The enrolment state, shown and acted on: the tick box follows the
+	   certificate, so a machine that has not enrolled cannot join. */
 	void UpdateNexusState();
 	void OnNexusEnrol(wxCommandEvent &event);
 	void OnMacAddressText(wxCommandEvent &event);
