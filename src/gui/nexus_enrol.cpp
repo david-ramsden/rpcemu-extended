@@ -60,9 +60,7 @@ extern "C" {
  */
 #define NEXUS_API_BASE	"https://nexus.branchthroughzero.co.uk"
 
-namespace {
-
-wxString ApiBase()
+wxString NexusApiBase()
 {
 	const char *override_url = getenv("RPCEMU_NEXUS_API");
 
@@ -71,6 +69,8 @@ wxString ApiBase()
 	}
 	return NEXUS_API_BASE;
 }
+
+namespace {
 
 /**
  * One top-level string out of a JSON object.
@@ -415,7 +415,7 @@ bool NexusEnrol(wxWindow *parent, const wxString &machine_dir,
 	    JsonEscape(csr_pem),
 	    JsonEscape(mac));
 
-	if (!transfer.PostJson(ApiBase() + "/api/v1/enrol", body)) {
+	if (!transfer.PostJson(NexusApiBase() + "/api/v1/enrol", body)) {
 		/* Nexus explains a refusal in the body, and that sentence is
 		   written for the person reading it - "That enrolment token is
 		   not usable. Ask for another one." says more than a status. */

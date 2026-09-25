@@ -32,8 +32,25 @@
 
 #include "nexus_enrol.h"
 
+#include <cstdlib>
+
 #include <wx/filefn.h>
 #include <wx/filename.h>
+
+/* The same address the real one uses. A build without Nexus can still send
+   somebody to the web site to read about it, and the settings still show the
+   box, so the link has to resolve here too. */
+#define NEXUS_API_BASE	"https://nexus.branchthroughzero.co.uk"
+
+wxString NexusApiBase()
+{
+	const char *override_url = getenv("RPCEMU_NEXUS_API");
+
+	if (override_url != nullptr && override_url[0] != '\0') {
+		return wxString::FromUTF8(override_url);
+	}
+	return NEXUS_API_BASE;
+}
 
 NexusEnrolment NexusEnrolmentFor(const wxString &machine_dir)
 {

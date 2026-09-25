@@ -117,6 +117,15 @@ struct NexusEnrolment {
 NexusEnrolment NexusEnrolmentFor(const wxString &machine_dir);
 
 /**
+ * Where the Nexus web site is, with no trailing slash.
+ *
+ * Honours RPCEMU_NEXUS_API, so a link offered to the user goes to the same
+ * Nexus that enrolment would talk to rather than to the real one while somebody
+ * is working against a local stack.
+ */
+wxString NexusApiBase();
+
+/**
  * Enrol a machine: make a key, have it certified, and write the three files.
  *
  * Replaces any existing enrolment, which is what re-enrolling means - the old

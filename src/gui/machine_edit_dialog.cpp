@@ -49,6 +49,7 @@ extern "C" {
 #include <wx/notebook.h>
 #include <wx/settings.h>
 #include <wx/filename.h>
+#include <wx/hyperlink.h>
 #include <wx/uilocale.h>
 #include <wx/utils.h>
 
@@ -1093,18 +1094,23 @@ wxWindow *MachineEditDialog::BuildNetworkPage(wxWindow *parent)
 	enrol_row->Add(nexus_enrol_button_, 0);
 
 	auto *nexus_note = MakeNote(nexus_parent,
-	    "A shared network with other people running RPCEmu, for reaching each "
-	    "other's ShareFS discs and printers. Every machine is identified by a "
-	    "certificate it enrols for, so nobody can send frames as somebody else, "
-	    "and you can make private networks and invite people to them.\n\n"
+	    "A shared network with other people running RPCEmu Extended, for "
+	    "reaching each other's ShareFS discs, printers etc. You can also "
+	    "create private networks.\n\n"
 	    "Sign in on the Nexus web site, add this machine, and paste the "
-	    "enrolment token it gives you. The key stays on this computer and is "
-	    "never sent anywhere.");
+	    "enrolment token it gives you.");
+
+	/* Its own line, not spliced into the paragraph above: notes are re-wrapped
+	   to the page width and a hyperlink is one unwrappable widget. The address
+	   comes from NexusApiBase() so RPCEMU_NEXUS_API is honoured here too. */
+	auto *nexus_link = new wxHyperlinkCtrl(nexus_parent, wxID_ANY,
+	    "Open the Nexus web site", NexusApiBase());
 
 	nexus_box->Add(nexus_check_, 0, wxALL, 6);
 	nexus_box->Add(nexus_status_, 0, wxEXPAND | wxLEFT | wxRIGHT, 6);
 	nexus_box->Add(enrol_row, 0, wxEXPAND | wxALL, 6);
 	nexus_box->Add(nexus_note, 0, wxEXPAND | wxALL, 6);
+	nexus_box->Add(nexus_link, 0, wxLEFT | wxRIGHT | wxBOTTOM, 6);
 
 	nexus_enrol_button_->Bind(wxEVT_BUTTON, &MachineEditDialog::OnNexusEnrol, this);
 	nexus_check_->Bind(wxEVT_CHECKBOX,
