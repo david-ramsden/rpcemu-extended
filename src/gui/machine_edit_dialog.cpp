@@ -1157,14 +1157,25 @@ MachineEditDialog::UpdateNexusState()
 
 	switch (e.state) {
 	case NexusState::Valid:
-	case NexusState::Renewable:
 		/* The date, not just the fact: a certificate lasts ninety days
 		   and renews itself, so the one thing worth showing is when it
-		   would run out if that ever stopped happening. Renewable says
-		   nothing of its own - renewal is automatic, and a date that
-		   has not moved is how somebody notices it has not. */
+		   would run out if that ever stopped happening. */
 		nexus_status_->SetLabel(wxString::Format("This machine is enrolled, until %s.",
 		    LocaleDate(e.not_after)));
+		nexus_enrol_button_->SetLabel("Enrol again");
+		break;
+
+	case NexusState::Renewable:
+		/* Past its renewal date, so either renewal has been failing or
+		   the machine has not been started since it came due - the
+		   attempt happens at startup, and this dialogue can be opened
+		   without ever starting it. Neither needs anything doing by
+		   hand, which is why this is a sentence and not a warning:
+		   there are weeks left and the next start may well fix it. What
+		   it saves is somebody finding out on the day it stops. */
+		nexus_status_->SetLabel(wxString::Format(
+		    "This machine is enrolled, until %s - but it has not renewed "
+		    "yet.", LocaleDate(e.not_after)));
 		nexus_enrol_button_->SetLabel("Enrol again");
 		break;
 
