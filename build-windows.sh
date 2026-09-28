@@ -183,6 +183,28 @@ else
 	fi
 fi
 
+# Nexus needs ngtcp2 and wolfSSL, which no package manager provides built
+# against each other - pacman's ngtcp2 has the GnuTLS and OpenSSL backends only.
+# Checked here rather than left to CMake so the prefix named is this build's own.
+ENABLE_NEXUS="${RPCEMU_ENABLE_NEXUS:-ON}"
+if [ "$ENABLE_NEXUS" != OFF ]; then
+	if [ "$NATIVE" = true ]; then
+		QUIC_PREFIX="$MSYS_PREFIX"
+		QUIC_SETUP="bash build-quic-libs.sh --prefix $MSYS_PREFIX"
+	else
+		QUIC_PREFIX="$SYSROOT"
+		QUIC_SETUP="./setup-cross-build-env.sh"
+	fi
+	if ! [ -f "$QUIC_PREFIX/lib/libngtcp2_crypto_wolfssl.a" ]; then
+		echo "error: ngtcp2 and wolfSSL not found in $QUIC_PREFIX, and the Nexus"
+		echo "       Community Network needs them. Build them with:"
+		echo "           $QUIC_SETUP"
+		echo "       Or build without the network:"
+		echo "           RPCEMU_ENABLE_NEXUS=OFF $0 ..."
+		exit 1
+	fi
+fi
+
 if command -v ninja >/dev/null; then GEN=Ninja; else GEN="Unix Makefiles"; fi
 
 echo "==> Building - mode: $MODE, generator: $GEN"
@@ -192,6 +214,7 @@ cmake -B "$BUILD_DIR" -G "$GEN" \
 	"$DYNAREC_ARG" \
 	-DRPCEMU_BUILD_TESTS=ON \
 	"-DRPCEMU_REQUIRE_LIBUSB=${RPCEMU_REQUIRE_LIBUSB:-ON}" \
+	"-DRPCEMU_ENABLE_NEXUS=$ENABLE_NEXUS" \
 	-DRPCEMU_ENABLE_GHOSTPDL=OFF
 cmake --build "$BUILD_DIR" -j"$(njobs)"
 

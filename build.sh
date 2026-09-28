@@ -216,6 +216,11 @@ cmake_common_args() {
 	# device is a broken release rather than a lesser one. Set
 	# RPCEMU_REQUIRE_LIBUSB=OFF in the environment to build without it anyway.
 	echo "-DRPCEMU_REQUIRE_LIBUSB=${RPCEMU_REQUIRE_LIBUSB:-ON}"
+	# Likewise the network: a release that cannot join Nexus is a broken one, so
+	# a missing ngtcp2 stops the build rather than producing an emulator that
+	# only says so when somebody tries to enrol a machine. setup-build-env.sh
+	# builds the libraries; RPCEMU_ENABLE_NEXUS=OFF builds without them.
+	echo "-DRPCEMU_ENABLE_NEXUS=${RPCEMU_ENABLE_NEXUS:-ON}"
 	echo -DCMAKE_INSTALL_PREFIX=/usr
 }
 

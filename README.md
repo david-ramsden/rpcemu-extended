@@ -273,6 +273,11 @@ The portable `.tar.gz` instead bundles everything in one folder; run
 ./build.sh --deb --zip  # + .deb package
 ```
 
+`setup-build-env.sh` also builds wolfSSL and ngtcp2 into `/usr/local`, which the Nexus
+network needs — no distribution packages ngtcp2 with the wolfSSL crypto backend, so they
+are built from source by [`build-quic-libs.sh`](build-quic-libs.sh). Skip the network with
+`RPCEMU_ENABLE_NEXUS=OFF ./build.sh`.
+
 See [COMPILE.md](COMPILE.md) for manual CMake, GhostPDL, and podule ROM rebuilds.
 
 ### Build for Windows
@@ -282,10 +287,21 @@ dual-mode:
 
 - **Native, on Windows** — from an **MSYS2 MINGW64** shell (install the
   `mingw-w64-x86_64-` toolchain, cmake, wxwidgets3.2-msw, SDL2, libvncserver, libusb),
-  just run `./build-windows.sh --zip`.
+  then build the QUIC libraries the Nexus network needs and run the build:
+
+  ```bash
+  bash build-quic-libs.sh --prefix /mingw64   # /clangarm64 on an arm64 MSYS2
+  ./build-windows.sh --zip
+  ```
+
+  MSYS2 does package ngtcp2, but built against GnuTLS and OpenSSL only — there is no
+  `libngtcp2_crypto_wolfssl` in it, which is the one Nexus uses, so it is built from
+  source.
 - **Cross-compile, from Linux** — run `./setup-cross-build-env.sh` once (builds
-  wxWidgets/SDL2/libvncserver/libusb for the mingw target into the sysroot), then
-  `./build-windows.sh --zip`.
+  wxWidgets/SDL2/libvncserver/libusb and the QUIC libraries for the mingw target into the
+  sysroot), then `./build-windows.sh --zip`.
+
+Either way, `RPCEMU_ENABLE_NEXUS=OFF ./build-windows.sh` builds without the network.
 
 It defaults to the recompiler (`rpcemu-recompiler.exe`); pass `--interpreter` for the
 interpreter build. Runtime DLLs are bundled into the staged folder automatically. This
@@ -312,7 +328,22 @@ sudo port select --set wxWidgets wxWidgets-3.2
 ```
 
 The `port select` is required: wxWidgets installs as a framework, and that is what puts
-`wx-config` on `PATH`. Homebrew works too:
+`wx-config` on `PATH`.
+
+The Nexus network additionally needs wolfSSL and ngtcp2, which no package manager
+provides — Homebrew has no ngtcp2 formula at all, and nobody ships it built against
+wolfSSL — so they are built from source into the same prefix:
+
+```bash
+./build-quic-libs.sh --prefix /opt/local --sudo   # /usr/local or /opt/homebrew for Homebrew
+```
+
+`--sudo` is for the install step alone; the build itself does not run as root.
+
+`build-macos.sh` stops before configuring if they are missing, and
+`RPCEMU_ENABLE_NEXUS=OFF ./build-macos.sh` builds without the network.
+
+Homebrew works too:
 
 ```bash
 brew install wxwidgets sdl2 libvncserver libusb cmake ninja pkg-config

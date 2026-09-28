@@ -235,11 +235,55 @@ check_slice_deps() {
 	exit 1
 }
 
+# The same question for wolfSSL and ngtcp2, which the check above cannot reach.
+#
+# It looks under `wx-config --prefix`, and on MacPorts that is the framework -
+# /opt/local/Library/Frameworks/wxWidgets.framework/Versions/... - while these
+# install to /opt/local/lib. pkg-config knows where they really are, and it is
+# how CMake finds them, so ask it rather than guessing at a prefix.
+#
+# Worth checking for the same reason as wx: these are static archives, so a
+# wrong-architecture one is not a clear "missing library" but a link that fails
+# on every ngtcp2 and wolfSSL symbol the QUIC client uses.
+check_slice_quic_deps() {
+	local arch="$1" pkgcfg libdir lib
+	local -a bad=()
+
+	[ "${RPCEMU_ENABLE_NEXUS:-ON}" != OFF ] || return 0
+
+	pkgcfg=$(command -v pkg-config || command -v pkgconf || true)
+	[ -n "$pkgcfg" ] || return 0
+
+	# A missing library is check_build_tools()'s business, not this one's.
+	"$pkgcfg" --exists libngtcp2 libngtcp2_crypto_wolfssl wolfssl || return 0
+
+	libdir=$("$pkgcfg" --variable=libdir libngtcp2 2>/dev/null) || return 0
+	[ -n "$libdir" ] && [ -d "$libdir" ] || return 0
+
+	for lib in libngtcp2.a libngtcp2_crypto_wolfssl.a libwolfssl.a; do
+		[ -e "$libdir/$lib" ] || continue
+		lib_has_arch "$libdir/$lib" "$arch" || bad+=("$libdir/$lib")
+	done
+
+	[ ${#bad[@]} -eq 0 ] && return 0
+
+	echo "error: [$arch] the Nexus libraries in $libdir are not built for $arch:" >&2
+	for lib in "${bad[@]}"; do
+		echo "         $lib ($(lipo -archs "$lib" 2>/dev/null))" >&2
+	done
+	echo "       These are built from source per architecture, so rebuild them" >&2
+	echo "       for this slice:" >&2
+	echo "           ./build-quic-libs.sh --prefix <prefix> --sudo" >&2
+	echo "       Or build the slice this machine's libraries are for:" >&2
+	echo "           ./build-macos.sh --arch $(uname -m)" >&2
+	exit 1
+}
+
 # CMake skips its pkg-config lookups silently when pkg-config is missing, so name
 # what is missing here instead of letting it surface as "libusb not found".
 check_build_tools() {
 	local -a missing=() brew_pkgs=() port_pkgs=()
-	local pkgcfg have_brew=false have_port=false wx_missing=false
+	local pkgcfg have_brew=false have_port=false wx_missing=false nexus_missing=false
 
 	command -v cmake >/dev/null 2>&1 || { missing+=(cmake); brew_pkgs+=(cmake); port_pkgs+=(cmake); }
 	if ! command -v wx-config >/dev/null 2>&1; then
@@ -253,6 +297,33 @@ check_build_tools() {
 		"$pkgcfg" --exists libvncserver || { missing+=(libvncserver); brew_pkgs+=(libvncserver); port_pkgs+=(LibVNCServer); }
 		if [ "${RPCEMU_REQUIRE_LIBUSB:-ON}" != OFF ]; then
 			"$pkgcfg" --exists libusb-1.0 || { missing+=(libusb); brew_pkgs+=(libusb); port_pkgs+=(libusb); }
+		fi
+
+		# Nexus, which no package manager can satisfy, so it is reported on its
+		# own rather than as another `port install` argument. Checked here
+		# because CMake's own failure arrives per slice, after MacPorts has been
+		# installed and wxWidgets built - a long way in to be told the build
+		# needed one more command.
+		if [ "${RPCEMU_ENABLE_NEXUS:-ON}" != OFF ] &&
+		   ! "$pkgcfg" --exists libngtcp2 libngtcp2_crypto_wolfssl wolfssl; then
+			nexus_missing=true
+		fi
+	fi
+
+	# Reported before the package-manager list below, and both are reported when
+	# both apply: somebody setting a machine up wants the whole story, not one
+	# missing thing per run.
+	if [ "$nexus_missing" = true ]; then
+		echo "error: ngtcp2 and wolfSSL not found, and the Nexus Community" >&2
+		echo "       Network needs them. No package manager ships ngtcp2 built" >&2
+		echo "       against wolfSSL, so they are built from source:" >&2
+		echo "           ./build-quic-libs.sh --prefix /opt/local --sudo" >&2
+		echo "       Then build again. To build without the network instead:" >&2
+		echo "           RPCEMU_ENABLE_NEXUS=OFF ./build-macos.sh ..." >&2
+		if [ ${#missing[@]} -gt 0 ]; then
+			echo >&2
+		else
+			exit 1
 		fi
 	fi
 
@@ -285,8 +356,14 @@ build_slice() {
 	# A native build must have libusb or the slice ships without USB
 	# passthrough; the cross path deliberately has no libusb to find.
 	local require_libusb="${RPCEMU_REQUIRE_LIBUSB:-ON}"
+	# Passed rather than left to CMake's default, so that both configures agree
+	# and a release cannot get one slice with the network and one without.
+	# setup-macos-cross-build-env.sh cross-builds the libraries, so this holds on
+	# the cross path too - unlike VNC, which is dropped there.
+	local enable_nexus="${RPCEMU_ENABLE_NEXUS:-ON}"
 	if [ "$MODE" = native ]; then
 		check_slice_deps "$arch"
+		check_slice_quic_deps "$arch"
 		tc_args+=(-DCMAKE_OSX_ARCHITECTURES="$arch"
 		          -DCMAKE_OSX_DEPLOYMENT_TARGET="$deploy")
 	else
@@ -311,6 +388,7 @@ build_slice() {
 		-DRPCEMU_DYNAREC="$dyn" \
 		-DRPCEMU_BUILD_TESTS="$tests" \
 		"-DRPCEMU_REQUIRE_LIBUSB=$require_libusb" \
+		"-DRPCEMU_ENABLE_NEXUS=$enable_nexus" \
 		-DRPCEMU_ENABLE_GHOSTPDL=OFF
 	echo "==> [$arch] building"
 	cmake --build "$build_dir" -j"$(njobs)"
@@ -334,6 +412,7 @@ build_slice() {
 			-DRPCEMU_DYNAREC=OFF \
 			-DRPCEMU_BUILD_TESTS=OFF \
 			"-DRPCEMU_REQUIRE_LIBUSB=$require_libusb" \
+			"-DRPCEMU_ENABLE_NEXUS=$enable_nexus" \
 			-DRPCEMU_ENABLE_GHOSTPDL=OFF
 		echo "==> [$arch] building the interpreter"
 		cmake --build "$build_dir-interpreter" -j"$(njobs)"

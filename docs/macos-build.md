@@ -75,6 +75,34 @@ Do **not** use the `+universal` variant. It has no binary archives, so it builds
 from source, and the per-architecture slices give a better result anyway — each
 gets its own recompiler backend.
 
+### wolfSSL and ngtcp2, from source
+
+The Nexus network needs both, and neither package manager can supply them:
+Homebrew has no ngtcp2 formula at all, and nobody ships ngtcp2 built against
+wolfSSL, which is the crypto backend Nexus uses. So they are built from source
+into the same prefix as everything else:
+
+```sh
+./build-quic-libs.sh --prefix /opt/local --sudo      # MacPorts
+./build-quic-libs.sh --prefix /opt/homebrew --sudo   # Homebrew, Apple Silicon
+./build-quic-libs.sh --prefix /usr/local --sudo      # Homebrew, Intel
+```
+
+`--sudo` covers the install step only; the build does not run as root. There is no
+default prefix — the script requires `--prefix`, because the right answer depends
+on which package manager the rest of the build is using.
+
+Both are static libraries, so nothing new arrives in `Contents/Frameworks` and the
+bundle's dependency checks are unaffected. `build-macos.sh` stops before
+configuring if they are missing, and `RPCEMU_ENABLE_NEXUS=OFF ./build-macos.sh`
+builds without the network — the emulator then works, but cannot enrol a machine
+or join Nexus.
+
+Each slice needs them built for its own architecture, like every other
+dependency: `--prefix` is per-machine on a native build, and
+`setup-macos-cross-build-env.sh` cross-builds both slices' copies when
+cross-compiling from Linux.
+
 ## CI
 
 The workflow (`.github/workflows/build.yml`) builds macOS natively on GitHub's

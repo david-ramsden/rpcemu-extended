@@ -5,21 +5,26 @@
 #   ./setup-build-env.sh              # Native Linux build dependencies
 #   ./setup-build-env.sh --cross-arm64 # + aarch64 cross-compiler (from amd64 host)
 #   ./setup-build-env.sh --podules    # + ARM binutils for podule ROM rebuilds
+#   ./setup-build-env.sh --no-nexus   # without wolfSSL and ngtcp2
 
 set -e
 
 INSTALL_CROSS_ARM64=false
 INSTALL_PODULES=false
+INSTALL_NEXUS=true
 
 for arg in "$@"; do
 	case $arg in
 		--cross-arm64) INSTALL_CROSS_ARM64=true ;;
 		--podules|-p) INSTALL_PODULES=true ;;
+		--no-nexus) INSTALL_NEXUS=false ;;
 		--help|-h)
 			echo "Usage: $0 [options]"
 			echo ""
 			echo "  --cross-arm64   Install Linux arm64 cross-compiler (from amd64 host)"
 			echo "  --podules, -p   Install ARM binutils for HostFS podule ROM rebuilds"
+			echo "  --no-nexus      Skip wolfSSL and ngtcp2, for a build configured"
+			echo "                  with -DRPCEMU_ENABLE_NEXUS=OFF"
 			exit 0
 			;;
 	esac
@@ -62,10 +67,12 @@ sudo apt $APT_RETRY install -y \
 	libvncserver-dev \
 	libusb-1.0-0-dev
 
-echo ""
-echo "Building wolfSSL and ngtcp2 for the Nexus Community Network..."
-"$(dirname "$0")/build-quic-libs.sh" --prefix /usr/local --sudo
-sudo ldconfig 2>/dev/null || true
+if [ "$INSTALL_NEXUS" = true ]; then
+	echo ""
+	echo "Building wolfSSL and ngtcp2 for the Nexus Community Network..."
+	"$(dirname "$0")/build-quic-libs.sh" --prefix /usr/local --sudo
+	sudo ldconfig 2>/dev/null || true
+fi
 
 echo ""
 echo "✓ Linux build environment ready"

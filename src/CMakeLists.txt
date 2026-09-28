@@ -319,13 +319,41 @@ endif()
 # The Nexus Community Network. Required rather than optional when the option is
 # on: nothing here degrades gracefully, and a build that quietly lacks the
 # network the user asked for is worse than one that stops.
+#
+# This is on by default, so a checkout without the libraries lands here and this
+# is the first thing a new builder sees. pkg_check_modules(REQUIRED) on its own
+# says the module "could not be found" and stops - true, and no use to somebody
+# with no way of knowing that ngtcp2 has to be built from source. So the modules
+# are looked for without REQUIRED and the failure reported here, with the
+# command to run.
 if(RPCEMU_ENABLE_NEXUS)
     if(NOT PkgConfig_FOUND)
-        message(FATAL_ERROR "RPCEMU_ENABLE_NEXUS needs pkg-config to find ngtcp2.")
+        message(FATAL_ERROR
+            "The Nexus Community Network needs pkg-config to find ngtcp2 and wolfSSL.\n"
+            "Install pkg-config, or configure with -DRPCEMU_ENABLE_NEXUS=OFF to "
+            "build without the network.")
     endif()
-    pkg_check_modules(NGTCP2 REQUIRED libngtcp2)
-    pkg_check_modules(NGTCP2_WOLFSSL REQUIRED libngtcp2_crypto_wolfssl)
-    pkg_check_modules(WOLFSSL REQUIRED wolfssl)
+    pkg_check_modules(NGTCP2 libngtcp2)
+    pkg_check_modules(NGTCP2_WOLFSSL libngtcp2_crypto_wolfssl)
+    pkg_check_modules(WOLFSSL wolfssl)
+
+    if(NOT NGTCP2_FOUND OR NOT NGTCP2_WOLFSSL_FOUND OR NOT WOLFSSL_FOUND)
+        message(FATAL_ERROR
+            "The Nexus Community Network needs ngtcp2 (with its wolfSSL crypto "
+            "backend) and wolfSSL, which were not found.\n"
+            "No package manager ships ngtcp2 built against wolfSSL, so they are "
+            "built from source:\n"
+            "    ./build-quic-libs.sh --prefix <prefix> [--sudo]\n"
+            "  Linux    --prefix /usr/local --sudo\n"
+            "  macOS    --prefix /opt/local --sudo   (MacPorts)\n"
+            "  MSYS2    --prefix /mingw64            (or /clangarm64 on arm64)\n"
+            "The setup-*-env.sh scripts do this for you. If the libraries are "
+            "somewhere else, point pkg-config at it:\n"
+            "    PKG_CONFIG_PATH=<prefix>/lib/pkgconfig\n"
+            "Or configure with -DRPCEMU_ENABLE_NEXUS=OFF to build without the "
+            "network: the emulator then works, but cannot enrol a machine or "
+            "join Nexus.")
+    endif()
 
     target_sources(rpcemu_core PRIVATE nexus_framing.c net_quic.c nexus_renew.c)
     target_include_directories(rpcemu_core PRIVATE

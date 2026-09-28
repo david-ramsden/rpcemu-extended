@@ -10,6 +10,18 @@
 # Usage:
 #   ./build-quic-libs.sh --prefix DIR [--toolchain FILE] [--sudo] [--jobs N]
 #
+# There is no default prefix, because the right answer is wherever the rest of
+# the build's libraries are:
+#
+#   Linux                 --prefix /usr/local --sudo
+#   macOS, MacPorts       --prefix /opt/local --sudo
+#   macOS, Homebrew       --prefix /opt/homebrew --sudo   (/usr/local on Intel)
+#   MSYS2 MINGW64         --prefix /mingw64
+#   MSYS2 CLANGARM64      --prefix /clangarm64
+#
+# --sudo is for the install step alone; nothing else runs as root. The
+# setup-*-env.sh scripts call this with the right prefix for their platform.
+#
 # ★ WHY FROM SOURCE, ON EVERY PLATFORM.
 #
 # Not for want of looking. Checked on 21/09/2026:
@@ -34,7 +46,9 @@
 # which is very much heavier than wolfSSL.
 set -euo pipefail
 
-# Bump together, and the CI cache key follows them.
+# Bumped together: ngtcp2's wolfSSL backend tracks the wolfSSL API fairly
+# closely, so these two versions are a pair that has been built and run
+# together rather than two independent choices.
 WOLFSSL=5.9.2-stable
 NGTCP2=1.25.0
 
@@ -49,17 +63,33 @@ while [ $# -gt 0 ]; do
 	--toolchain) TOOLCHAIN="$2"; shift 2 ;;
 	--jobs)      JOBS="$2"; shift 2 ;;
 	--sudo)      SUDO=sudo; shift ;;
-	-h|--help)   sed -n '2,40p' "$0"; exit 0 ;;
+	# To the end of the comment block, wherever that now is: a line range goes
+	# stale the first time the header grows, and used to print `set -euo
+	# pipefail` as though it were documentation.
+	-h|--help)   sed -n '2,/^[^#]/{/^[^#]/d; s/^# \{0,1\}//; p;}' "$0"; exit 0 ;;
 	*)           echo "error: unknown option $1" >&2; exit 1 ;;
 	esac
 done
 
-[ -n "$PREFIX" ] || { echo "error: --prefix is required" >&2; exit 1; }
+if [ -z "$PREFIX" ]; then
+	echo "error: --prefix is required, and there is no sensible default: the" >&2
+	echo "       libraries belong wherever the rest of the build's libraries" >&2
+	echo "       are. Usually one of:" >&2
+	echo "         Linux              --prefix /usr/local --sudo" >&2
+	echo "         macOS (MacPorts)   --prefix /opt/local --sudo" >&2
+	echo "         macOS (Homebrew)   --prefix /opt/homebrew --sudo" >&2
+	echo "         MSYS2 MINGW64      --prefix /mingw64" >&2
+	echo "         MSYS2 CLANGARM64   --prefix /clangarm64" >&2
+	echo "       See --help, or let setup-build-env.sh do it for you." >&2
+	exit 1
+fi
 command -v cmake >/dev/null || { echo "error: cmake not found" >&2; exit 1; }
 command -v curl  >/dev/null || { echo "error: curl not found" >&2; exit 1; }
 
-# Already there, at the versions asked for. CI caches the prefix, so this is
-# the difference between twenty seconds and none.
+# Already there, at the versions asked for, so a second run is free. This is for
+# a developer's machine and for setup-build-env.sh, which is run more than once:
+# CI starts each job on a clean runner and never sees the stamp, and nothing
+# caches the prefix between jobs.
 STAMP="${PREFIX}/lib/.rpcemu-quic-libs"
 WANT="wolfssl-${WOLFSSL} ngtcp2-${NGTCP2}"
 

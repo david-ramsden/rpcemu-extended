@@ -150,9 +150,12 @@ jobs:
           fetch-tags: true
           submodules: recursive
 
+      # --no-nexus: this job configures with RPCEMU_ENABLE_NEXUS=OFF, so building
+      # wolfSSL and ngtcp2 here would be a minute spent on libraries nothing
+      # links against.
       - name: Install dependencies
         timeout-minutes: 8
-        run: bash setup-build-env.sh
+        run: bash setup-build-env.sh --no-nexus
 
       # The interpreter, not the recompiler: ASan instruments compiled code, and
       # the recompiler writes its own at run time into a page it maps itself, so
@@ -167,6 +170,7 @@ jobs:
           cmake -S . -B build-san \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DRPCEMU_DYNAREC=OFF \
+            -DRPCEMU_ENABLE_NEXUS=OFF \
             -DRPCEMU_ENABLE_GHOSTPDL=OFF \
             -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all" \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all" \

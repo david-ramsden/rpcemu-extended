@@ -97,11 +97,36 @@ Installed automatically by `./setup-build-env.sh` on Debian/Ubuntu:
 | `libusb-1.0-0-dev` | USB passthrough: handing a real host device to the guest |
 | `libgs-dev`, `ghostscript` | In-process PostScript → PDF conversion (optional but recommended) |
 
+Two more are **built from source**, by `build-quic-libs.sh`, which
+`setup-build-env.sh` calls:
+
+| Library | Purpose |
+| --- | --- |
+| wolfSSL | The Nexus network's TLS, and the P-256 key and certificate request a machine makes when it enrols |
+| ngtcp2 | QUIC, with the wolfSSL crypto backend |
+
+Neither comes from a package manager: where ngtcp2 is packaged at all it is either far
+behind the API this needs or built against GnuTLS and OpenSSL, without the
+`libngtcp2_crypto_wolfssl` Nexus uses. The header of
+[`build-quic-libs.sh`](build-quic-libs.sh) records what each platform's packages actually
+offered, and when that was checked. Building both from source also means every platform
+gets the identical library with identical options:
+
+```bash
+./build-quic-libs.sh --prefix /usr/local --sudo
+```
+
+If they go somewhere else, point pkg-config at it with
+`PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. Configuring without them fails with the command
+to run; `-DRPCEMU_ENABLE_NEXUS=OFF` builds without the network instead, and the emulator
+then works but cannot enrol a machine or join Nexus.
+
 Optional extras:
 
 ```bash
 ./setup-build-env.sh --cross-arm64  # aarch64-linux-gnu (cross from x86 PC)
 ./setup-build-env.sh --podules      # ARM binutils for podule ROM rebuild
+./setup-build-env.sh --no-nexus     # skip wolfSSL and ngtcp2
 ```
 
 ---
@@ -128,6 +153,7 @@ cmake --build build -j"$(nproc)"
 | `RPCEMU_ENABLE_GHOSTPDL` | ON | Link against Ghostscript/GhostPDL for in-process PDF conversion |
 | `RPCEMU_ENABLE_WARNINGS` | ON | Extra compiler warnings (`-Wall -Wextra -Werror=switch`) |
 | `RPCEMU_REQUIRE_LIBUSB` | OFF | Fail the build if libusb-1.0 is missing. The release scripts turn this ON so a platform cannot quietly ship without USB passthrough |
+| `RPCEMU_ENABLE_NEXUS` | ON | The Nexus network. Needs wolfSSL and ngtcp2, which are built from source — see [Dependencies](#dependencies). OFF builds an emulator that cannot enrol a machine or join Nexus |
 | `RPCEMU_PROFILE` | OFF | Build in a sampling profiler for the emulator thread, a development tool. See [Profiling the emulator thread](#profiling-the-emulator-thread) |
 
 Interpreter build:

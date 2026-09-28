@@ -74,10 +74,15 @@ endif()
 
 option(RPCEMU_ENABLE_VNC "Enable VNC server support (requires libvncserver)" ON)
 option(RPCEMU_BUILD_TESTS "Build unit tests (amd64 dynarec only)" ON)
-# Off until the client is finished. build-quic-libs.sh installs what this needs;
-# no package manager ships ngtcp2 with the wolfSSL crypto backend, so the
-# libraries are never already there.
-option(RPCEMU_ENABLE_NEXUS "Enable the Nexus Community Network (requires ngtcp2 + wolfSSL)" OFF)
+# On, so that a build has the network unless it is asked not to. That means a
+# checkout with no ngtcp2 stops at configure time rather than producing an
+# emulator that cannot join Nexus and only says so when somebody tries to enrol
+# a machine - which is how this was found.
+#
+# No package manager ships ngtcp2 with the wolfSSL crypto backend, so the
+# libraries are never already there: build-quic-libs.sh builds them, and the
+# setup-*-env.sh scripts call it. Turn this OFF to build without them.
+option(RPCEMU_ENABLE_NEXUS "Enable the Nexus Community Network (requires ngtcp2 + wolfSSL)" ON)
 # Off by default so a casual build still works without libusb. Release builds
 # turn it on, so a platform losing USB passthrough fails the build rather than
 # shipping quietly without it.
