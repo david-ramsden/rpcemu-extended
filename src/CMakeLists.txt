@@ -364,11 +364,34 @@ if(RPCEMU_ENABLE_NEXUS)
     # and a static link resolves left to right.
     target_link_libraries(rpcemu_core PUBLIC
         ${NGTCP2_WOLFSSL_LIBRARIES} ${NGTCP2_LIBRARIES} ${WOLFSSL_LIBRARIES})
-    # wolfSSL's Diffie-Hellman uses pow() and log(), and its .pc file does not
-    # say so: without this the link fails on three symbols from dh.c. Not on
-    # Windows, where the maths functions are in the C runtime.
+    # wolfSSL's .pc file declares -lwolfssl and, privately, -lm. That is all it
+    # declares, and it is not all wolfSSL needs: the rest has to be named here,
+    # per platform, or the link fails on symbols from inside libwolfssl.a.
+    #
+    # Its Diffie-Hellman uses pow() and log(), hence -lm, which is in the C
+    # runtime on Windows.
     if(NOT WIN32)
         target_link_libraries(rpcemu_core PUBLIC m)
+    endif()
+
+    # And wolfSSL_CTX_load_system_CA_certs() reads the host's certificate store,
+    # which is a different library on every platform. nexus_renew.c calls it:
+    # renewal verifies the Nexus web certificate against the system trust store
+    # rather than against the Nexus CA, so this is reached on every platform.
+    #
+    #   Windows  CertOpenSystemStoreA and friends are in crypt32; wolfSSL also
+    #            uses inet_pton and the sockets, which are in ws2_32.
+    #   macOS    SecTrustSettingsCopyCertificates is Security, and the CFArray,
+    #            CFData, CFError and CFString calls around it are
+    #            CoreFoundation. DoAppleNativeCertValidation() in internal.c
+    #            pulls in both.
+    #   Linux    the store is a directory of PEM files, so there is nothing
+    #            extra to link.
+    if(WIN32)
+        target_link_libraries(rpcemu_core PUBLIC ws2_32 crypt32)
+    elseif(APPLE)
+        target_link_libraries(rpcemu_core PUBLIC
+            "-framework CoreFoundation" "-framework Security")
     endif()
     target_compile_definitions(rpcemu_core PRIVATE RPCEMU_HAVE_NEXUS)
     message(STATUS "Nexus: ngtcp2 ${NGTCP2_VERSION}, wolfSSL ${WOLFSSL_VERSION}")
