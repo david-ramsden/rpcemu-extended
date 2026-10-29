@@ -16,6 +16,7 @@
 #   Linux                 --prefix /usr/local --sudo
 #   macOS, MacPorts       --prefix /opt/local --sudo
 #   macOS, Homebrew       --prefix /opt/homebrew --sudo   (/usr/local on Intel)
+#   MSYS2 UCRT64          --prefix /ucrt64
 #   MSYS2 MINGW64         --prefix /mingw64
 #   MSYS2 CLANGARM64      --prefix /clangarm64
 #
@@ -78,6 +79,7 @@ if [ -z "$PREFIX" ]; then
 	echo "         Linux              --prefix /usr/local --sudo" >&2
 	echo "         macOS (MacPorts)   --prefix /opt/local --sudo" >&2
 	echo "         macOS (Homebrew)   --prefix /opt/homebrew --sudo" >&2
+	echo "         MSYS2 UCRT64       --prefix /ucrt64" >&2
 	echo "         MSYS2 MINGW64      --prefix /mingw64" >&2
 	echo "         MSYS2 CLANGARM64   --prefix /clangarm64" >&2
 	echo "       See --help, or let setup-build-env.sh do it for you." >&2

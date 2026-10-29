@@ -285,12 +285,12 @@ See [COMPILE.md](COMPILE.md) for manual CMake, GhostPDL, and podule ROM rebuilds
 `build-windows.sh` builds the Windows package to `releases/windows/amd64/` and is
 dual-mode:
 
-- **Native, on Windows** — from an **MSYS2 MINGW64** shell (install the
-  `mingw-w64-x86_64-` toolchain, cmake, wxwidgets3.2-msw, SDL2, libvncserver, libusb),
+- **Native, on Windows** — from an **MSYS2 UCRT64** shell (install the
+  `mingw-w64-ucrt-x86_64-` toolchain, cmake, wxwidgets3.2-msw, SDL2, libvncserver, libusb),
   then build the QUIC libraries the Nexus network needs and run the build:
 
   ```bash
-  bash build-quic-libs.sh --prefix /mingw64   # /clangarm64 on an arm64 MSYS2
+  bash build-quic-libs.sh --prefix /ucrt64   # /clangarm64 on an arm64 MSYS2
   ./build-windows.sh --zip
   ```
 
@@ -844,7 +844,7 @@ that cannot reach a device.
 | Platform                  | How                                                                                |
 | ------------------------- | ---------------------------------------------------------------------------------- |
 | Linux                     | `./setup-build-env.sh` (installs `libusb-1.0-0-dev`)                               |
-| Windows, native MSYS2     | `pacman -S mingw-w64-x86_64-libusb` (or `mingw-w64-clang-aarch64-libusb` on ARM64) |
+| Windows, native MSYS2     | `pacman -S mingw-w64-ucrt-x86_64-libusb` (or `mingw-w64-clang-aarch64-libusb` on ARM64) |
 | Windows, cross from Linux | `./setup-cross-build-env.sh` (builds libusb for the MinGW target)                  |
 | macOS                     | `brew install libusb` or `sudo port install libusb`                                |
 

@@ -308,7 +308,7 @@ elseif(RPCEMU_REQUIRE_LIBUSB)
         "USB passthrough was required (RPCEMU_REQUIRE_LIBUSB=ON) but libusb-1.0 "
         "was not found.\n"
         "  Linux:   ./setup-build-env.sh (libusb-1.0-0-dev)\n"
-        "  MSYS2:   pacman -S mingw-w64-x86_64-libusb\n"
+        "  MSYS2:   pacman -S mingw-w64-ucrt-x86_64-libusb\n"
         "  macOS:   brew install libusb, or sudo port install libusb\n"
         "  MinGW cross: ./setup-cross-build-env.sh\n"
         "Configure with -DRPCEMU_REQUIRE_LIBUSB=OFF to build without it.")
@@ -346,7 +346,7 @@ if(RPCEMU_ENABLE_NEXUS)
             "    ./build-quic-libs.sh --prefix <prefix> [--sudo]\n"
             "  Linux    --prefix /usr/local --sudo\n"
             "  macOS    --prefix /opt/local --sudo   (MacPorts)\n"
-            "  MSYS2    --prefix /mingw64            (or /clangarm64 on arm64)\n"
+            "  MSYS2    --prefix /ucrt64             (or /clangarm64 on arm64)\n"
             "The setup-*-env.sh scripts do this for you. If the libraries are "
             "somewhere else, point pkg-config at it:\n"
             "    PKG_CONFIG_PATH=<prefix>/lib/pkgconfig\n"
@@ -394,6 +394,11 @@ if(RPCEMU_ENABLE_NEXUS)
             "-framework CoreFoundation" "-framework Security")
     endif()
     target_compile_definitions(rpcemu_core PRIVATE RPCEMU_HAVE_NEXUS)
+    # ngtcp2 is a static archive; on Windows its headers default to
+    # __declspec(dllimport) without this.
+    if(WIN32)
+        target_compile_definitions(rpcemu_core PRIVATE NGTCP2_STATICLIB)
+    endif()
     message(STATUS "Nexus: ngtcp2 ${NGTCP2_VERSION}, wolfSSL ${WOLFSSL_VERSION}")
 endif()
 
