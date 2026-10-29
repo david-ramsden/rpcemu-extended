@@ -282,8 +282,8 @@ See [COMPILE.md](COMPILE.md) for manual CMake, GhostPDL, and podule ROM rebuilds
 `build-windows.sh` builds the Windows package to `releases/windows/amd64/` and is
 dual-mode:
 
-- **Native, on Windows** — from an **MSYS2 MINGW64** shell (install the
-  `mingw-w64-x86_64-` toolchain, cmake, wxwidgets3.2-msw, SDL2, libvncserver, libusb),
+- **Native, on Windows** — from an **MSYS2 UCRT64** shell (install the
+  `mingw-w64-ucrt-x86_64-` toolchain, cmake, wxwidgets3.2-msw, SDL2, libvncserver, libusb),
   just run `./build-windows.sh --zip`.
 - **Cross-compile, from Linux** — run `./setup-cross-build-env.sh` once (builds
   wxWidgets/SDL2/libvncserver/libusb for the mingw target into the sysroot), then
