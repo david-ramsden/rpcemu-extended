@@ -421,7 +421,7 @@ jobs:
   linux-amd64:
     needs: build-gate
     if: always() && needs.build-gate.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 21
     steps:
       # submodules: recursive is not optional here, and it is on every checkout
