@@ -767,12 +767,12 @@ void MainFrame::ReportMenuState()
 	report += wxString::Format("%d=%d", kStateFullscreenMessage,
 	    config_copy_.show_fullscreen_message ? 1 : 0);
 
-	/* 0 disabled, 1 an empty drive, 2 an image - the same three the radio group
-	   in this window's Disc menu offers. */
+	/* 0 disabled, 1 empty, 2 ISO image, 3 host drive (ioctl). */
 	int cdrom_source = 0;
 
 	if (config_copy_.cdromenabled) {
-		cdrom_source = (config_copy_.cdromtype == 2) ? 2 : 1;
+		cdrom_source = (config_copy_.cdromtype == 2) ? 2
+		    : (config_copy_.cdromtype == 1) ? 3 : 1;
 	}
 	report += wxString::Format(" %d=%d", kStateCdromSource, cdrom_source);
 	report += wxString::Format(" %d=%d", kStateNetworkIsNat,

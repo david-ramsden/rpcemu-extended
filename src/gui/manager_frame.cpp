@@ -821,6 +821,10 @@ void ManagerFrame::BuildMachineMenus(wxMenuBar *menu_bar)
 	    "Disabled");
 	cdrom_empty_item_ = cdrom_menu->AppendRadioItem(ID_MENU_CDROM_EMPTY, "Empty");
 	cdrom_iso_item_ = cdrom_menu->AppendRadioItem(ID_MENU_CDROM_ISO, "ISO Image...");
+#if defined(__linux__)
+	cdrom_ioctl_item_ = cdrom_menu->AppendRadioItem(ID_MENU_CDROM_IOCTL,
+	    "Host CD/DVD Drive");
+#endif
 	machine_disc_menu_->AppendSubMenu(cdrom_menu, "&CD-ROM");
 
 	machine_settings_menu_ = new wxMenu();
@@ -1221,7 +1225,8 @@ void ManagerFrame::SetDebugToolState(bool paused, bool pausing)
 
 void ManagerFrame::SetCdromMenuState(int source)
 {
-	wxMenuItem *item = (source == 2) ? cdrom_iso_item_
+	wxMenuItem *item = (source == 3) ? cdrom_ioctl_item_
+	    : (source == 2) ? cdrom_iso_item_
 	    : (source == 1) ? cdrom_empty_item_ : cdrom_disabled_item_;
 
 	if (item != nullptr) {
