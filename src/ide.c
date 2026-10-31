@@ -1283,7 +1283,7 @@ void callbackide(void)
                         IDE_R.secount=1;
                         IDE_R.sector=1;
                         IDE_R.cylinder=0xEB14;
-                        ide.drive=IDE_R.head=0;
+                        IDE_R.head=0;
                         goto abort_cmd;
                 }
                 if (!ide_drive_is_hdd(ide.drive)) {
