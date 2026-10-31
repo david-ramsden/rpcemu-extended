@@ -590,6 +590,27 @@ NAT port-forward rules are stored in a separate `[nat_port_forward_rules]` group
 
 ---
 
+## CD-ROM
+
+The emulated machine has a single IDE CD-ROM drive (drive 1 on the primary
+channel). Three source modes are available from the Disc > CD-ROM menu:
+
+| Mode                 | What it does                                                        |
+| -------------------- | ------------------------------------------------------------------- |
+| **Disabled**         | No CD-ROM drive present; RISC OS does not see one on the IDE bus    |
+| **Empty**            | Drive present but no disc inserted                                  |
+| **ISO Image**        | Mount an ISO 9660 image file from the host                         |
+| **Host CD/DVD Drive** | Pass through the host's `/dev/cdrom` device (Linux only)           |
+
+ISO images can be switched at any time without restarting the machine.
+Recently used images appear in the Disc > CD-ROM > Recent Images submenu.
+
+The Host CD/DVD Drive option appears only on Linux, where the host's block
+device is read directly. The device must be readable by the user running
+RPCEmu (typically the `cdrom` group). On macOS and Windows, use ISO images.
+
+---
+
 ## HostFS and Shared drives
 
 Two filing system icons appear on the RISC OS icon bar:

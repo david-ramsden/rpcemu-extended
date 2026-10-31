@@ -936,6 +936,7 @@ void EmulatorHost::HandleCommand(const EmuCommand &command)
 		config_save(&config);
 		atapi->exit();
 		iso_init();
+		atapi_discchanged();
 		break;
 	case EmuCommandType::CdromLoadIso:
 		if (!config.cdromenabled) {
